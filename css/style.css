@@ -1,0 +1,8 @@
+html, body { height: 100%; margin: 0; font-family: system-ui, Arial, sans-serif; }
+.topbar { padding: 8px 16px; border-bottom: 1px solid #eee; }
+.layout { display: grid; grid-template-columns: 280px 1fr; height: calc(100vh - 50px); }
+.sidebar { padding: 12px; overflow: auto; border-right: 1px solid #eee; }
+.panel { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px dashed #ddd; }
+.mapwrap { position: relative; }
+.map { position: absolute; inset: 0; }
+#timeSlider { margin-top: 8px; }
