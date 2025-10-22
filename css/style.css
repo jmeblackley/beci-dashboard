@@ -1,8 +1,103 @@
-html, body { height: 100%; margin: 0; font-family: system-ui, Arial, sans-serif; }
-.topbar { padding: 8px 16px; border-bottom: 1px solid #eee; }
-.layout { display: grid; grid-template-columns: 280px 1fr; height: calc(100vh - 50px); }
-.sidebar { padding: 12px; overflow: auto; border-right: 1px solid #eee; }
-.panel { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px dashed #ddd; }
-.mapwrap { position: relative; }
-.map { position: absolute; inset: 0; }
-#timeSlider { margin-top: 8px; }
+/*
+ * Core layout styles for the BECI dashboard prototype.
+ * The design emphasises the map by keeping the header compact and
+ * organising the content into a slim sidebar and a large map panel.
+ */
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: system-ui, Arial, sans-serif;
+}
+
+/* Top bar containing the tab navigation. Height is kept small to
+   minimise vertical space when embedding the dashboard. */
+.topbar {
+  display: flex;
+  align-items: center;
+  background-color: #003f6f;
+  color: white;
+  height: 40px;
+  padding: 0 8px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* Tabs displayed in a row. Buttons behave like tabs. */
+.tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+
+/* Individual tab button styling. The active class highlights the
+   selected theme. */
+.tab {
+  background: transparent;
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.tab:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.tab.active {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Layout splits the page into a narrow sidebar and a large map area.
+   The header height is subtracted to fill the remaining viewport. */
+.layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  height: calc(100vh - 40px);
+}
+
+/* Sidebar holds panels for context, layer toggles and time slider. */
+.sidebar {
+  padding: 12px;
+  overflow: auto;
+  border-right: 1px solid #eee;
+  background-color: #fafafa;
+}
+
+/* Panels are separated by dashed lines to visually group controls. */
+.panel {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed #ddd;
+}
+
+.panel:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* Map container fills its parent. The absolute positioning allows
+   the map view to resize with the layout. */
+.mapwrap {
+  position: relative;
+  background: #f3f3f3;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+}
+
+/* Time slider spacing */
+#timeSlider {
+  margin-top: 8px;
+}
+
+/* Context panel text sizing */
+#themeContent {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}

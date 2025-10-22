@@ -2,25 +2,43 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>BECI Dashboard (POC)</title>
+  <title>BECI Dashboard (Prototype)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Custom styles for the dashboard -->
   <link rel="stylesheet" href="./css/style.css" />
+  <!-- ArcGIS JavaScript API styles -->
   <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css" />
   <script src="https://js.arcgis.com/4.30/"></script>
 </head>
 <body>
+  <!-- Top navigation bar. Tabs allow switching between themes. -->
   <header class="topbar">
-    <h1>BECI Oceans Dashboard — POC</h1>
+    <nav class="tabs">
+      <button class="tab active" data-theme="intro">Introduction</button>
+      <button class="tab" data-theme="env">Environmental Conditions</button>
+      <button class="tab" data-theme="pressures">Environmental Pressures</button>
+      <button class="tab" data-theme="jurisdictions">Management Jurisdictions</button>
+      <button class="tab" data-theme="fish">Fish Impacts</button>
+    </nav>
   </header>
 
+  <!-- Main layout: a narrow sidebar for context and controls and a map panel -->
   <main class="layout">
     <section class="sidebar">
+      <!-- Contextual information for the selected theme -->
+      <div class="panel" id="contextPanel">
+        <h2 id="themeTitle"></h2>
+        <div id="themeContent"></div>
+      </div>
+
+      <!-- Layer toggles used within the Environmental Conditions theme -->
       <div class="panel">
         <h2>Layers</h2>
         <label><input type="checkbox" id="toggleSST" checked /> Sea Surface Temperature</label><br />
-        <label><input type="checkbox" id="toggleChl" /> Chlorophyll-a</label>
+        <label><input type="checkbox" id="toggleChl" /> Chlorophyll‑a</label>
       </div>
 
+      <!-- Time slider placeholder for time-enabled datasets -->
       <div class="panel">
         <h2>Time</h2>
         <div id="timeSlider"></div>
@@ -32,9 +50,9 @@
     </section>
   </main>
 
-  <!-- Load local runtime config FIRST (has your API key). This file is ignored by Git. -->
+  <!-- Load local runtime config FIRST (contains your API key). This file is ignored by Git. -->
   <script src="./config.local.js"></script>
-  <!-- Your app logic -->
+  <!-- Application logic -->
   <script src="./js/app.js"></script>
 </body>
 </html>
