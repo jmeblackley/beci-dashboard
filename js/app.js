@@ -118,8 +118,21 @@ require([
 
   view.when(function () {
     view.goTo(pacificExtent4326, { animate: false }).then(function () {
-      // Lock current as max zoom-out (epsilon for LOD rounding)
-      view.constraints.minScale = view.scale * 0.998;
+      // Allow one additional zoom-out step beyond the initial view.
+      var currentScale = view.scale;
+      var targetMinScale = currentScale * 1.5;
+
+      if (view.constraints && view.constraints.lods && view.constraints.lods.length) {
+        for (var i = 0; i < view.constraints.lods.length; i++) {
+          var lod = view.constraints.lods[i];
+          if (lod.scale > currentScale * 1.01) {
+            targetMinScale = lod.scale;
+            break;
+          }
+        }
+      }
+
+      view.constraints.minScale = targetMinScale;
     });
   });
 
