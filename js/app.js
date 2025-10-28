@@ -192,19 +192,29 @@ require([
   });
 
   function getActiveLayer() {
-    if (chkMonthly && chkMonthly.checked) { return sstMonthly; }
-    if (chkAnnual && chkAnnual.checked) { return sstAnnual; }
+    if (chkMonthly && chkMonthly.checked && sstMonthly.visible) { return sstMonthly; }
+    if (chkAnnual && chkAnnual.checked && sstAnnual.visible) { return sstAnnual; }
     return null;
   }
 
   function configureSliderFor(layer) {
     if (!layer || !layer.timeInfo) {
-      timePanel.style.display = "none";
+      if (timePanel) { timePanel.style.display = "none"; }
       return;
     }
-    timePanel.style.display = "block";
+    if (timePanel) { timePanel.style.display = "block"; }
     timeSlider.fullTimeExtent = layer.timeInfo.fullTimeExtent;
-    timeSlider.stops = { interval: layer.timeInfo.interval };
+
+    var interval;
+    if (layer === sstMonthly) {
+      interval = { value: 1, unit: "months" };
+    } else if (layer === sstAnnual) {
+      interval = { value: 1, unit: "years" };
+    } else {
+      interval = layer.timeInfo.interval;
+    }
+
+    timeSlider.stops = { interval: interval };
     // IMPORTANT: always reset slider values to the active layer range,
     // otherwise a previous range can filter the new layer to nothing.
     timeSlider.values = [
@@ -243,6 +253,15 @@ require([
 
   // ---- Theme switching ----
   let currentTheme = "intro";
+  tabButtons.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const key = btn.getAttribute("data-theme");
+      if (key) {
+        selectTheme(key);
+      }
+    });
+  });
+
   function selectTheme(key) {
     currentTheme = key;
     tabButtons.forEach(function (btn) {
@@ -262,7 +281,6 @@ require([
   // Wait for both SST layers before first slider setup
   Promise.all([sstAnnual.when(), sstMonthly.when()]).then(function () {
     selectTheme("intro");
-    selectTheme("env");  // show toggles and initialise slider to Annual
   });
 
   // ---- Sanity warnings ----
