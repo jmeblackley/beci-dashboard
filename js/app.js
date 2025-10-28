@@ -183,26 +183,35 @@ require([
 
   // Reuse existing checkboxes in index.html:
   //  - #toggleSST = Annual
-  //  - #toggleChl = Monthly (label text updated below)
+  //  - #toggleChl = Monthly
   const chkAnnual = document.getElementById("toggleSST");
   const chkMonthly = document.getElementById("toggleChl");
 
-  // Update label text (no short-circuit expressions → no JSHint W030)
-  const labelAnnual = document.querySelector('label[for="toggleSST"]');
-  if (labelAnnual && labelAnnual.lastChild) {
-    labelAnnual.lastChild.textContent = " Sea Surface Temperature (Annual)";
-  }
-  const labelMonthly = document.querySelector('label[for="toggleChl"]');
-  if (labelMonthly && labelMonthly.lastChild) {
-    labelMonthly.lastChild.textContent = " Sea Surface Temperature (Monthly)";
+  // ---- One TimeSlider that adapts to the active SST series ----
+  if (timePanel) {
+    timePanel.classList.add("esri-component", "esri-widget");
+    timePanel.setAttribute("role", "group");
+    timePanel.setAttribute("aria-label", "Time slider controls");
+    view.ui.add(timePanel, { position: "top-right", index: 0 });
   }
 
-  // ---- One TimeSlider that adapts to the active SST series ----
   const timeSlider = new TimeSlider({
     container: "timeSlider",
     view: view,
     mode: "time-window"
   });
+
+  function hideTimePanel() {
+    if (!timePanel) { return; }
+    timePanel.style.display = "none";
+    timePanel.setAttribute("aria-hidden", "true");
+  }
+
+  function showTimePanel() {
+    if (!timePanel) { return; }
+    timePanel.style.display = "";
+    timePanel.removeAttribute("aria-hidden");
+  }
 
   function getActiveLayer() {
     if (chkMonthly && chkMonthly.checked && sstMonthly.visible) { return sstMonthly; }
@@ -281,17 +290,25 @@ require([
       btn.classList.toggle("active", btn.getAttribute("data-theme") === key);
     });
     const t = themes[key];
-    themeTitleEl.textContent = t.title;
-    themeContentEl.innerHTML = t.content;
+    if (themeTitleEl) {
+      themeTitleEl.textContent = t.title;
+    }
+    if (themeContentEl) {
+      themeContentEl.innerHTML = t.content;
+    }
 
     const usesLayers = t.layersVisible && t.layersVisible.length > 0;
-    layerPanel.style.display = usesLayers ? "block" : "none";
+    if (layerPanel) {
+      layerPanel.style.display = usesLayers ? "block" : "none";
+    }
     // timePanel handled by configureSliderFor()
 
     updateLayerVisibility(key);
   }
 
   // Wait for both SST layers before first slider setup
+  hideTimePanel();
+
   Promise.all([sstAnnual.when(), sstMonthly.when()]).then(function () {
     selectTheme("intro");
   });
