@@ -91,27 +91,17 @@ html, body {
   inset: 0;
 }
 
-/* Floating time slider panel displayed on top of the map via the ArcGIS UI. */
+/* Floating time slider panel displayed on top of the map. */
 .time-overlay {
-  display: none;
-  background: rgba(255, 255, 255, 0.94);
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  width: min(360px, calc(100% - 48px));
+  background: rgba(255, 255, 255, 0.92);
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   padding: 12px;
-  width: clamp(220px, 26vw, 320px);
-  max-width: calc(100vw - 48px);
-  pointer-events: auto;
-}
-
-.esri-ui-top-right .time-overlay {
-  margin: 16px 16px 0;
-}
-
-@media (max-width: 680px) {
-  .esri-ui-top-right .time-overlay {
-    width: calc(100vw - 32px);
-    margin: 12px;
-  }
+  display: none;
 }
 
 .time-overlay h2 {

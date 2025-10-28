@@ -221,10 +221,10 @@ require([
 
   function configureSliderFor(layer) {
     if (!layer || !layer.timeInfo) {
-      hideTimePanel();
+      if (timePanel) { timePanel.style.display = "none"; }
       return;
     }
-    showTimePanel();
+    if (timePanel) { timePanel.style.display = "block"; }
     timeSlider.fullTimeExtent = layer.timeInfo.fullTimeExtent;
 
     var interval;
