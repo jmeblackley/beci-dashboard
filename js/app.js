@@ -1,252 +1,223 @@
-/* Simplified BECI dashboard with a working TimeSlider bound to the visible time-aware layer */
+// Revised application logic for the BECI dashboard POC.
+//
+// This version restores the original TimeSlider behaviour (two‑thumb time
+// window) while retaining the streamlined UI from the proof‑of‑concept.  It
+// reads portal item IDs and other runtime options from `window.BECI_CONFIG`
+// (loaded from config.local.js in the project root) and binds the slider to
+// whichever time‑aware raster layer is currently visible.  Only one raster
+// is shown at a time to avoid ambiguous temporal states.  Vector overlays
+// (administrative areas and species shifts) are controlled via checkboxes.
 
 require([
   "esri/config",
   "esri/Map",
   "esri/views/MapView",
-  "esri/widgets/Legend",
-  "esri/widgets/ScaleBar",
-  "esri/widgets/TimeSlider",
-  "esri/layers/TileLayer",
   "esri/layers/ImageryLayer",
   "esri/layers/ImageryTileLayer",
-  "esri/geometry/Extent",
-  "esri/geometry/Polygon"
+  "esri/layers/FeatureLayer",
+  "esri/widgets/Legend",
+  "esri/widgets/ScaleBar",
+  "esri/widgets/TimeSlider"
 ], function (
   esriConfig,
   Map,
   MapView,
-  Legend,
-  ScaleBar,
-  TimeSlider,
-  TileLayer,
   ImageryLayer,
   ImageryTileLayer,
-  Extent,
-  Polygon
+  FeatureLayer,
+  Legend,
+  ScaleBar,
+  TimeSlider
 ) {
-  // ---- Runtime config / basemap ----
-  const RC = window.BECI_CONFIG || {};
-  esriConfig.apiKey = RC.apiKey || "";
+  // ---- Runtime configuration ----
+  // Pull API key, spatial reference and portal item IDs from the injected
+  // config.  The config is defined in `config.local.js` and attached to
+  // window.BECI_CONFIG.  Fallbacks are provided for all values in case a
+  // particular field is omitted.
+  const CFG = window.BECI_CONFIG || {};
+  esriConfig.apiKey = CFG.apiKey || "";
 
-  const wantsCustomSR = !!(RC.spatialReference && RC.basemapUrl);
-  const map = new Map({ basemap: wantsCustomSR ? null : "oceans" });
+  // Determine whether to honour a custom spatial reference.  If both a
+  // spatialReference and a corresponding basemapUrl are supplied via
+  // the runtime config, we will attempt to use them; otherwise we
+  // default to Web Mercator (wkid 3857).  Most Esri basemaps do not
+  // support arbitrary projections, so using a custom SR without a
+  // matching basemap will cause the map to fail to draw.
+  const wantsCustomSR = !!(CFG.spatialReference && CFG.basemapUrl);
+  const spatialRef = wantsCustomSR ? CFG.spatialReference : { wkid: 3857 };
+  const items = CFG.items || {};
 
+  // ---- Map and view ----
+  // Use the Esri “oceans” basemap in Web Mercator unless the runtime
+  // config specifies a different spatial reference.  A bespoke basemap
+  // implementation (e.g. using a custom URL) could be added here if
+  // necessary; for this POC the default basemap is sufficient.
+  // Create the map.  If a custom basemap is requested (with SR and URL),
+  // build a basemap from the provided layer; otherwise use the default
+  // "oceans" basemap in Web Mercator.
+  let map;
   if (wantsCustomSR) {
-    const baseLayer =
-      RC.basemapType === "imagery"
-        ? new ImageryLayer({ url: RC.basemapUrl, spatialReference: RC.spatialReference })
-        : new TileLayer({ url: RC.basemapUrl, spatialReference: RC.spatialReference });
-
-    map.basemap = { baseLayers: [baseLayer], spatialReference: RC.spatialReference };
+    map = new Map({ basemap: { baseLayers: [ new ImageryLayer({ url: CFG.basemapUrl, spatialReference: spatialRef }) ], spatialReference: spatialRef } });
+  } else {
+    map = new Map({ basemap: "oceans" });
   }
-
-  // ---- Operational layers (time-enabled) ----
-  const sstAnnual = new ImageryTileLayer({
-    portalItem: { id: "91743c7b6f354494acc8c822e2a40df6" },
-    title: "SST (Annual)",
-    visible: true
-  });
-
-  const sstMonthly = new ImageryTileLayer({
-    portalItem: { id: "8c551d176e0e48ddaec623545f4899f2" },
-    title: "SST (Monthly)",
-    visible: false
-  });
-
-  map.addMany([sstAnnual, sstMonthly]);
-
-  // ---- MapView (pacific-centred clamp) ----
-  const bbox = { xmin: -256.921871, ymin: -15.388022, xmax: -100.828121, ymax: 79.534085 };
-  const clampPoly4326 = new Polygon({
-    spatialReference: { wkid: 4326 },
-    rings: [[[bbox.xmin, bbox.ymin],[bbox.xmax, bbox.ymin],[bbox.xmax, bbox.ymax],[bbox.xmin, bbox.ymax],[bbox.xmin, bbox.ymin]]]
-  });
-  const pacificExtent4326 = new Extent({ spatialReference: { wkid: 4326 }, ...bbox });
-
   const view = new MapView({
-    container: "view",
+    container: "viewDiv",
     map,
-    extent: pacificExtent4326,
-    spatialReference: wantsCustomSR ? RC.spatialReference : undefined,
-    constraints: {
-      geometry: clampPoly4326,
-      wrapAround: false,
-      rotationEnabled: false
-    }
+    spatialReference: spatialRef,
+    center: [180, 35],
+    zoom: 3,
+    constraints: { wrapAround: false, rotationEnabled: false, snapToZoom: false }
   });
 
-  view.when(() => {
-    view.goTo(pacificExtent4326, { animate: false }).then(() => {
-      const currentScale = view.scale;
-      let targetMinScale = currentScale * 1.5;
-      if (view.constraints && view.constraints.lods?.length) {
-        for (const lod of view.constraints.lods) {
-          if (lod.scale > currentScale * 1.01) {
-            targetMinScale = lod.scale;
-            break;
-          }
-        }
-      }
-      view.constraints.minScale = targetMinScale;
-    });
-  });
-
-  // ---- Widgets ----
+  // Add a legend and a scale bar to help interpret the map.  The legend
+  // automatically reflects the layers in the map’s operational stack.
   view.ui.add(new Legend({ view }), "bottom-left");
   view.ui.add(new ScaleBar({ view, unit: "metric" }), "bottom-right");
 
-  // ---- Simple theme text (unchanged UI) ----
-  const themes = {
-    intro: {
-      title: "Introduction",
-      content:
-        "<p>The Basin Events to Coastal Impacts (BECI) dashboard aggregates ocean and fisheries intelligence to support decision makers...</p>",
-      layersVisible: []
-    },
-    env: {
-      title: "Environmental Conditions",
-      content:
-        "<p>Environmental conditions include sea surface temperature. Toggle annual vs monthly SST and use the time slider.</p>",
-      layersVisible: ["sstAnnual", "sstMonthly"]
-    },
-    pressures: { title: "Environmental Pressures", content: "<p>Configure this theme with ocean pressures...</p>", layersVisible: [] },
-    jurisdictions: { title: "Management Jurisdictions", content: "<p>Visualise management jurisdictions, maritime boundaries, and EEZs...</p>", layersVisible: [] },
-    fish: { title: "Fish Impacts", content: "<p>Future enhancements could summarise stock assessments...</p>", layersVisible: [] }
-  };
-
-  const themeTitleEl = document.getElementById("themeTitle");
-  const themeContentEl = document.getElementById("themeContent");
-  const tabButtons = document.querySelectorAll(".tab");
-  const layerPanel = document.getElementById("layerPanel");
-
-  const chkAnnual = document.getElementById("toggleSST");  // Annual
-  const chkMonthly = document.getElementById("toggleChl"); // Monthly
-
-  // ---- TimeSlider: keep it always present; bind to the active layer ----
-  // Mount the panel if present in the DOM
-  const timePanel = document.getElementById("timePanel");
-  if (timePanel) {
-    timePanel.classList.add("esri-component", "esri-widget");
-    view.ui.add(timePanel, { position: "top-right", index: 0 });
-    timePanel.style.display = ""; // always show; we decide functionality below
-  }
-
-  const timeSlider = new TimeSlider({
-    container: "timeSlider",
-    view,
-    mode: "time-window" // This will set and react to view.timeExtent
+  // ---- Time‑aware raster layers ----
+  // Sea‑surface temperature (SST) monthly and annual layers are delivered
+  // as tiled imagery services when published that way.  Chlorophyll is
+  // served as a dynamic imagery service.  IDs are pulled from the config
+  // where possible.  Only one of these rasters will be visible at any time.
+  const sstMonthly = new ImageryTileLayer({
+    portalItem: { id: items.sstMonthlyId || "8c551d176e0e48ddaec623545f4899f2" },
+    title: "SST (Monthly)",
+    visible: true
   });
+  const sstAnnual = new ImageryTileLayer({
+    portalItem: { id: items.sstAnnualId || "91743c7b6f354494acc8c822e2a40df6" },
+    title: "SST (Annual)",
+    visible: false
+  });
+  // Chlorophyll is published as a tiled imagery service (see service
+  // description).  Use ImageryTileLayer instead of ImageryLayer so that
+  // timeInfo and tiling information are respected.
+  const chlMonthly = new ImageryTileLayer({
+    portalItem: { id: items.chlMonthlyId || "f08e5246b0814aabb1df13dae5ec862b" },
+    title: "Chlorophyll (Monthly)",
+    visible: false
+  });
+  const rasters = [sstMonthly, sstAnnual, chlMonthly];
+  map.addMany(rasters);
+
+  // ---- Vector overlay layers ----
+  // The species/admin collection contains four sublayers: admin areas,
+  // species shift lines, and start/end points.  Their visibility is
+  // toggled independently via checkboxes in the UI.
+  const speciesItemId = items.speciesCollectionId || "f97d35b2f30c4c1fb29df6c7df9030d5";
+  const adminAreas = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 3, title: "Admin areas", opacity: 0.25, visible: true });
+  const spLines    = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 2, title: "Species shift (lines)", visible: true });
+  const spStart    = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 1, title: "Species shift (start)", visible: true });
+  const spEnd      = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 0, title: "Species shift (end)", visible: true });
+  map.addMany([adminAreas, spLines, spStart, spEnd]);
+
+  // ---- TimeSlider widget ----
+  // Create a TimeSlider with two thumbs (“time‑window” mode).  It is
+  // injected into the map’s UI (bottom‑right) rather than using the
+  // legacy custom time bar.  The slider is bound to whichever raster is
+  // currently visible and time‑enabled.  When the user scrubs the slider,
+  // the view’s timeExtent is updated to filter the raster accordingly.
+  const timeSlider = new TimeSlider({
+    view,
+    mode: "time-window"
+  });
+  view.ui.add(timeSlider, "bottom-right");
+
+  // Configure playback options.  Setting playRate defines how quickly
+  // the slider thumbs advance when the play button is engaged (in
+  // milliseconds per stop).  Enabling loop allows the animation to
+  // restart automatically when it reaches the end of the range.  These
+  // settings also ensure the play button is enabled when a time extent
+  // and stops are defined.
+  timeSlider.playRate = 1000; // one second per interval
+  timeSlider.loop = true;
 
   /**
-   * Pick the first visible time-aware layer
+   * Bind the TimeSlider to the given raster layer.  This function waits
+   * for the layer to finish loading so that its timeInfo becomes
+   * available.  If no timeInfo is present, the slider is cleared.
+   * @param {ImageryLayer|ImageryTileLayer} layer The active time‑aware layer.
    */
-  function getActiveTimeLayer() {
-    const candidates = [sstMonthly, sstAnnual]; // prefer monthly if both are toggled
-    for (const lyr of candidates) {
-      if (lyr?.visible && lyr.timeInfo) return lyr;
-    }
-    return null;
-  }
-
-  /**
-   * Initialises/binds the slider to the layer's timeInfo
-   */
-  function bindSliderToLayer(layer) {
-    if (!layer || !layer.timeInfo) {
-      // If no time-aware layer is visible, clear the slider + view extent
+  function bindSliderTo(layer) {
+    if (!layer) {
       timeSlider.fullTimeExtent = null;
       timeSlider.values = null;
       view.timeExtent = null;
       return;
     }
+    layer.load().then(() => {
+      const ti = layer.timeInfo;
+      if (!ti || !ti.fullTimeExtent) {
+        timeSlider.fullTimeExtent = null;
+        timeSlider.values = null;
+        view.timeExtent = null;
+        return;
+      }
+      timeSlider.fullTimeExtent = ti.fullTimeExtent;
 
-    const { fullTimeExtent, interval } = layer.timeInfo;
+      // Wrap the service interval correctly.
+      const serviceInterval = ti.interval;
+      const guessedInterval = (layer === sstAnnual)
+        ? { interval: { unit: "years", value: 1 } }
+        : { interval: { unit: "months", value: 1 } };
+      const stops = serviceInterval
+        ? { interval: serviceInterval }
+        : guessedInterval;
+      timeSlider.stops = stops;
 
-    // If service has an interval, use it; otherwise choose sensible default
-    const inferredInterval =
-      interval ||
-      (layer === sstMonthly
-        ? { value: 1, unit: "months" }
-        : { value: 1, unit: "years" });
-
-    timeSlider.fullTimeExtent = fullTimeExtent;
-    timeSlider.stops = { interval: inferredInterval };
-
-    // Reset slider to full span each time we switch datasets
-    timeSlider.values = [fullTimeExtent.start, fullTimeExtent.end];
-
-    // view.timeExtent will be driven by the slider since it’s bound to view
-    // (No extra watchers required)
+      timeSlider.values = [ti.fullTimeExtent.start, ti.fullTimeExtent.end];
+      view.timeExtent = timeSlider.timeExtent;
+    });
   }
+
 
   /**
-   * Update visible layers based on checkboxes and (re)bind slider
+   * Make the specified layer visible and hide the others.  Afterwards,
+   * bind the slider to the visible layer so that its timeInfo drives the
+   * slider’s extent and interval.
+   * @param {ImageryLayer|ImageryTileLayer} activeLayer The layer to show.
    */
-  function applyVisibility() {
-    const wantsAnnual = !!chkAnnual?.checked;
-    const wantsMonthly = !!chkMonthly?.checked;
-
-    // Only allow one SST series at a time for clarity
-    // If both checked, prefer monthly
-    sstMonthly.visible = wantsMonthly || (wantsMonthly && wantsAnnual);
-    sstAnnual.visible = !sstMonthly.visible && wantsAnnual;
-
-    bindSliderToLayer(getActiveTimeLayer());
+  function setOnlyVisible(activeLayer) {
+    rasters.forEach((layer) => {
+      layer.visible = (layer === activeLayer);
+    });
+    bindSliderTo(activeLayer);
   }
 
-  // Layer ready => (re)bind if this one is active
-  sstAnnual.when(() => { if (sstAnnual.visible) bindSliderToLayer(sstAnnual); });
-  sstMonthly.when(() => { if (sstMonthly.visible) bindSliderToLayer(sstMonthly); });
+  // Initial binding: SST monthly is visible by default.
+  bindSliderTo(sstMonthly);
 
-  // Checkbox handlers
-  if (chkAnnual)  chkAnnual.addEventListener("change", applyVisibility);
-  if (chkMonthly) chkMonthly.addEventListener("change", applyVisibility);
+  // Listen for slider changes to keep the view’s time extent in sync.
+  timeSlider.watch("timeExtent", (te) => {
+    view.timeExtent = te;
+  });
 
-  // ---- Theme switching kept minimal; env shows layer panel; others hide it
-  let currentTheme = "intro";
-  tabButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const key = btn.getAttribute("data-theme");
-      if (!key) return;
-      currentTheme = key;
-
-      tabButtons.forEach((b) =>
-        b.classList.toggle("active", b.getAttribute("data-theme") === key)
-      );
-
-      const t = themes[key];
-      if (themeTitleEl) themeTitleEl.textContent = t.title;
-      if (themeContentEl) themeContentEl.innerHTML = t.content;
-      if (layerPanel) layerPanel.style.display = t.layersVisible?.length ? "block" : "none";
-
-      // When entering a non-env theme, hide both SST layers and clear slider
-      if (!(t.layersVisible?.length)) {
-        sstAnnual.visible = false;
-        sstMonthly.visible = false;
-        bindSliderToLayer(null);
-      } else {
-        // env theme: apply current checkboxes to decide active time layer
-        applyVisibility();
+  // ---- UI wiring: raster radio buttons ----
+  // Radio inputs defined in index.html control which raster is visible.
+  const radios = document.querySelectorAll('input[name="rasterChoice"]');
+  radios.forEach((r) => {
+    r.addEventListener("change", () => {
+      if (!r.checked) return;
+      switch (r.value) {
+        case "sstMonthly": setOnlyVisible(sstMonthly); break;
+        case "sstAnnual":  setOnlyVisible(sstAnnual);  break;
+        case "chlMonthly": setOnlyVisible(chlMonthly); break;
+        default: break;
       }
     });
   });
 
-  // Wait for both layers, then start on "intro"
-  Promise.all([sstAnnual.when(), sstMonthly.when()]).then(() => {
-    // Start on intro with slider idle
-    themeTitleEl && (themeTitleEl.textContent = themes.intro.title);
-    themeContentEl && (themeContentEl.innerHTML = themes.intro.content);
-    layerPanel && (layerPanel.style.display = "none");
-    // If you prefer to land directly on the env tab, uncomment:
-    // document.querySelector('.tab[data-theme="env"]').click();
-  });
-
-  // ---- Sanity warnings ----
-  if (RC.spatialReference && !RC.basemapUrl) {
-    console.warn("[BECI] You specified a custom spatialReference but no basemapUrl...");
-  }
-  if (RC.basemapUrl && !RC.spatialReference) {
-    console.warn("[BECI] You provided a custom basemapUrl without a spatialReference...");
-  }
+  // ---- UI wiring: vector overlay checkboxes ----
+  // Toggle the visibility of the admin/species layers based on the
+  // checkboxes in the sidebar.  Each checkbox has an id corresponding
+  // to the layer it controls (e.g. chkAdmin => adminAreas).
+  const chkAdmin = document.getElementById("chkAdmin");
+  const chkLines = document.getElementById("chkLines");
+  const chkStart = document.getElementById("chkStart");
+  const chkEnd   = document.getElementById("chkEnd");
+  if (chkAdmin) chkAdmin.addEventListener("change", () => { adminAreas.visible = chkAdmin.checked; });
+  if (chkLines) chkLines.addEventListener("change", () => { spLines.visible    = chkLines.checked; });
+  if (chkStart) chkStart.addEventListener("change", () => { spStart.visible    = chkStart.checked; });
+  if (chkEnd)   chkEnd.addEventListener("change", () => { spEnd.visible      = chkEnd.checked; });
 });

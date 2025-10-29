@@ -2,59 +2,101 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>BECI Dashboard (Prototype)</title>
+  <title>BECI Interactive Map (POC)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Custom styles for the dashboard -->
-  <link rel="stylesheet" href="./css/style.css" />
-
-  <!-- ArcGIS JavaScript API (AMD) -->
+  <!-- ArcGIS JS API -->
   <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css" />
   <script src="https://js.arcgis.com/4.30/"></script>
+
+  <!-- Basic theming for the POC. Feel free to move this to a separate CSS file. -->
+  <style>
+    :root { --bg:#f7f7fb; --ink:#1b1b1f; --muted:#6b7280; --brand:#0ea5e9; --panel:#ffffff; --border:#e5e7eb; }
+    html, body { height:100%; margin:0; }
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif; background:var(--bg); color:var(--ink); }
+    .topbar { display:flex; align-items:center; gap:.75rem; padding:.5rem .75rem; border-bottom:1px solid var(--border); background:var(--panel); position:sticky; top:0; z-index:10; }
+    .tablist { display:flex; gap:.25rem; }
+    .tab { border:1px solid var(--border); background:#fff; padding:.35rem .6rem; border-radius:.6rem; cursor:pointer; }
+    .tab.is-active { border-color:var(--brand); color:#0b5e86; background:#f0f9ff; }
+    .layout { display:grid; grid-template-columns: 340px 1fr; gap:.75rem; height: calc(100% - 56px); padding:.75rem; }
+    .side { background:var(--panel); border:1px solid var(--border); border-radius:.8rem; padding:.75rem; overflow:auto; }
+    .mapwrap { position:relative; background:#dbeafe; border:1px solid var(--border); border-radius:.8rem; overflow:hidden; }
+    #viewDiv { position:absolute; inset:0; }
+    .section { margin-bottom:1rem; }
+    .section h3 { margin:.25rem 0 .5rem; font-size:1rem; }
+    .muted { color:var(--muted); font-size:.9rem; }
+    fieldset { border:1px solid var(--border); border-radius:.6rem; padding:.5rem .6rem; }
+    legend { padding:0 .25rem; color:var(--muted); }
+    .row { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+    /* Hide legacy time bar; the app will use a built-in TimeSlider. */
+    .timebar { display:none; }
+  </style>
 </head>
 <body>
-  <!-- Top navigation bar. Tabs allow switching between themes. -->
   <header class="topbar">
-    <nav class="tabs">
-      <button class="tab active" data-theme="intro">Introduction</button>
-      <button class="tab" data-theme="env">Environmental Conditions</button>
-      <button class="tab" data-theme="pressures">Environmental Pressures</button>
-      <button class="tab" data-theme="jurisdictions">Management Jurisdictions</button>
-      <button class="tab" data-theme="fish">Fish Impacts</button>
-    </nav>
+    <strong>BECI Interactive Map (POC)</strong>
+    <div class="tablist" id="tablist">
+      <button class="tab is-active" data-theme="intro">Introduction</button>
+      <button class="tab" data-theme="env">Environmental conditions</button>
+      <button class="tab" data-theme="pressures">Environmental pressures</button>
+      <button class="tab" data-theme="jurisdictions">Management jurisdictions</button>
+      <button class="tab" data-theme="fish">Fish impacts</button>
+    </div>
   </header>
 
-  <!-- Main layout: a narrow sidebar for context and controls and a map panel -->
   <main class="layout">
-    <section class="sidebar">
-      <!-- Contextual information for the selected theme -->
-      <div class="panel" id="contextPanel">
-        <h2 id="themeTitle"></h2>
-        <div id="themeContent"></div>
+    <aside class="side">
+      <div id="themeTitle" class="section">
+        <h2>Welcome</h2>
+        <p class="muted">Switch tabs to explore datasets. The map persists; only content and layers change.</p>
       </div>
 
-      <!-- Layer toggles used within the Environmental Conditions theme -->
-      <div class="panel" id="layerPanel">
-        <h2>Layers</h2>
-        <label><input type="checkbox" id="toggleSST" checked /> Sea Surface Temperature</label><br />
-        <label><input type="checkbox" id="toggleChl" /> Chlorophyll-a</label>
+      <div id="themeContent" class="section">
+        <p>This proof-of-concept shows one interactive map with multiple thematic tabs. Pick a raster below, then scrub time.</p>
+        <ul class="muted">
+          <li>One time-aware raster visible at a time (clean TimeSlider binding).</li>
+          <li>Species/admin layers appear on relevant tabs.</li>
+        </ul>
       </div>
 
-      <!-- Time slider placeholder for time-enabled datasets -->
-      <div class="panel" id="timePanel">
-        <h2>Time</h2>
+      <div id="layerPanel" class="section">
+        <fieldset>
+          <legend>Raster layers (exclusive)</legend>
+          <div class="row">
+            <label><input type="radio" name="rasterChoice" value="sstMonthly" checked> SST (Monthly)</label>
+            <label><input type="radio" name="rasterChoice" value="sstAnnual"> SST (Annual)</label>
+            <label><input type="radio" name="rasterChoice" value="chlMonthly"> Chlorophyll (Monthly)</label>
+          </div>
+          <p class="muted" style="margin:.5rem 0 0">Only one is shown at a time to avoid ambiguous time states.</p>
+        </fieldset>
+      </div>
+
+      <div id="vectorPanel" class="section">
+        <fieldset>
+          <legend>Vector overlays</legend>
+          <div class="row">
+            <label><input type="checkbox" id="chkAdmin" checked> Admin areas</label>
+            <label><input type="checkbox" id="chkLines" checked> Species shift (lines)</label>
+            <label><input type="checkbox" id="chkStart" checked> Species shift (start)</label>
+            <label><input type="checkbox" id="chkEnd" checked> Species shift (end)</label>
+          </div>
+        </fieldset>
+      </div>
+    </aside>
+
+    <section class="mapwrap">
+      <div id="viewDiv"></div>
+      <!-- Legacy time bar kept for backward compatibility; hidden by CSS and app logic -->
+      <div class="timebar" id="timeBar">
+        <button class="btn" id="btnPlay" title="Play/Pause">▶</button>
+        <span id="timeLabel" class="pill">–</span>
         <div id="timeSlider"></div>
       </div>
     </section>
-
-    <section class="mapwrap">
-      <div id="view" class="map"></div>
-    </section>
   </main>
 
-  <!-- Load local runtime config FIRST (contains your API key & optional SR/basemap). This file is git-ignored. -->
+  <!-- Load the local configuration from the project root.  This provides the API key, spatial reference and item IDs. -->
   <script src="./config.local.js"></script>
-
   <!-- Application logic -->
   <script src="./js/app.js"></script>
 </body>
