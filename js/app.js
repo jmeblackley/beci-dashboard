@@ -1,11 +1,5 @@
-/*
- * BECI dashboard prototype (repo-structure aligned)
- * - SST (Annual) + SST (Monthly) — chlorophyll removed
- * - One TimeSlider that adapts to the active SST series (years vs months)
- * - Pacific-centred hard clamp to your bbox; initial view is absolute zoom-out
- */
+/* Simplified BECI dashboard with a working TimeSlider bound to the visible time-aware layer */
 
-/* global window, document */
 require([
   "esri/config",
   "esri/Map",
@@ -26,7 +20,7 @@ require([
   ScaleBar,
   TimeSlider,
   TileLayer,
-  ImageryLayer,          // used only if RC.basemapType === "imagery"
+  ImageryLayer,
   ImageryTileLayer,
   Extent,
   Polygon
@@ -34,40 +28,26 @@ require([
   // ---- Runtime config / basemap ----
   const RC = window.BECI_CONFIG || {};
   esriConfig.apiKey = RC.apiKey || "";
-  const wantsCustomSR = !!(RC.spatialReference && RC.basemapUrl);
 
-  const map = new Map({
-    basemap: wantsCustomSR ? null : "oceans"
-  });
+  const wantsCustomSR = !!(RC.spatialReference && RC.basemapUrl);
+  const map = new Map({ basemap: wantsCustomSR ? null : "oceans" });
 
   if (wantsCustomSR) {
-    var baseLayer;
-    if (RC.basemapType === "imagery") {
-      baseLayer = new ImageryLayer({
-        url: RC.basemapUrl,
-        spatialReference: RC.spatialReference
-      });
-    } else {
-      baseLayer = new TileLayer({
-        url: RC.basemapUrl,
-        spatialReference: RC.spatialReference
-      });
-    }
-    map.basemap = {
-      baseLayers: [baseLayer],
-      spatialReference: RC.spatialReference
-    };
+    const baseLayer =
+      RC.basemapType === "imagery"
+        ? new ImageryLayer({ url: RC.basemapUrl, spatialReference: RC.spatialReference })
+        : new TileLayer({ url: RC.basemapUrl, spatialReference: RC.spatialReference });
+
+    map.basemap = { baseLayers: [baseLayer], spatialReference: RC.spatialReference };
   }
 
-  // ---- Operational layers ----
-  // SST (Annual) — existing item
+  // ---- Operational layers (time-enabled) ----
   const sstAnnual = new ImageryTileLayer({
     portalItem: { id: "91743c7b6f354494acc8c822e2a40df6" },
     title: "SST (Annual)",
     visible: true
   });
 
-  // SST (Monthly) — new item
   const sstMonthly = new ImageryTileLayer({
     portalItem: { id: "8c551d176e0e48ddaec623545f4899f2" },
     title: "SST (Monthly)",
@@ -76,241 +56,190 @@ require([
 
   map.addMany([sstAnnual, sstMonthly]);
 
-  // ---- MapView (strict clamp to Pacific-centred bbox) ----
-  const bbox = {
-    xmin: -256.921871,
-    ymin: -15.388022,
-    xmax: -100.828121,
-    ymax: 79.534085
-  };
-
+  // ---- MapView (pacific-centred clamp) ----
+  const bbox = { xmin: -256.921871, ymin: -15.388022, xmax: -100.828121, ymax: 79.534085 };
   const clampPoly4326 = new Polygon({
     spatialReference: { wkid: 4326 },
-    rings: [[
-      [bbox.xmin, bbox.ymin],
-      [bbox.xmax, bbox.ymin],
-      [bbox.xmax, bbox.ymax],
-      [bbox.xmin, bbox.ymax],
-      [bbox.xmin, bbox.ymin]
-    ]]
+    rings: [[[bbox.xmin, bbox.ymin],[bbox.xmax, bbox.ymin],[bbox.xmax, bbox.ymax],[bbox.xmin, bbox.ymax],[bbox.xmin, bbox.ymin]]]
   });
-
-  const pacificExtent4326 = new Extent({
-    spatialReference: { wkid: 4326 },
-    xmin: bbox.xmin,
-    ymin: bbox.ymin,
-    xmax: bbox.xmax,
-    ymax: bbox.ymax
-  });
+  const pacificExtent4326 = new Extent({ spatialReference: { wkid: 4326 }, ...bbox });
 
   const view = new MapView({
     container: "view",
-    map: map,
+    map,
     extent: pacificExtent4326,
     spatialReference: wantsCustomSR ? RC.spatialReference : undefined,
     constraints: {
-      geometry: clampPoly4326,   // hard clamp to bbox
+      geometry: clampPoly4326,
       wrapAround: false,
       rotationEnabled: false
-      // minScale set after initial fit
     }
   });
 
-  view.when(function () {
-    view.goTo(pacificExtent4326, { animate: false }).then(function () {
-      // Allow one additional zoom-out step beyond the initial view.
-      var currentScale = view.scale;
-      var targetMinScale = currentScale * 1.5;
-
-      if (view.constraints && view.constraints.lods && view.constraints.lods.length) {
-        for (var i = 0; i < view.constraints.lods.length; i++) {
-          var lod = view.constraints.lods[i];
+  view.when(() => {
+    view.goTo(pacificExtent4326, { animate: false }).then(() => {
+      const currentScale = view.scale;
+      let targetMinScale = currentScale * 1.5;
+      if (view.constraints && view.constraints.lods?.length) {
+        for (const lod of view.constraints.lods) {
           if (lod.scale > currentScale * 1.01) {
             targetMinScale = lod.scale;
             break;
           }
         }
       }
-
       view.constraints.minScale = targetMinScale;
     });
   });
 
   // ---- Widgets ----
-  view.ui.add(new Legend({ view: view }), "bottom-left");
-  view.ui.add(new ScaleBar({ view: view, unit: "metric" }), "bottom-right");
+  view.ui.add(new Legend({ view }), "bottom-left");
+  view.ui.add(new ScaleBar({ view, unit: "metric" }), "bottom-right");
 
-  // ---- Themes (chl removed; two SST series) ----
+  // ---- Simple theme text (unchanged UI) ----
   const themes = {
     intro: {
       title: "Introduction",
       content:
-        "<p>The Basin Events to Coastal Impacts (BECI) dashboard aggregates ocean " +
-        "and fisheries intelligence to support decision makers...</p>",
+        "<p>The Basin Events to Coastal Impacts (BECI) dashboard aggregates ocean and fisheries intelligence to support decision makers...</p>",
       layersVisible: []
     },
     env: {
       title: "Environmental Conditions",
       content:
-        "<p>Environmental conditions include sea surface temperature. " +
-        "Toggle annual vs monthly SST and use the time slider.</p>",
+        "<p>Environmental conditions include sea surface temperature. Toggle annual vs monthly SST and use the time slider.</p>",
       layersVisible: ["sstAnnual", "sstMonthly"]
     },
-    pressures: {
-      title: "Environmental Pressures",
-      content: "<p>Configure this theme with ocean pressures...</p>",
-      layersVisible: []
-    },
-    jurisdictions: {
-      title: "Management Jurisdictions",
-      content:
-        "<p>Visualise management jurisdictions, maritime boundaries, and EEZs...</p>",
-      layersVisible: []
-    },
-    fish: {
-      title: "Fish Impacts",
-      content:
-        "<p>Future enhancements could summarise stock assessments...</p>",
-      layersVisible: []
-    }
+    pressures: { title: "Environmental Pressures", content: "<p>Configure this theme with ocean pressures...</p>", layersVisible: [] },
+    jurisdictions: { title: "Management Jurisdictions", content: "<p>Visualise management jurisdictions, maritime boundaries, and EEZs...</p>", layersVisible: [] },
+    fish: { title: "Fish Impacts", content: "<p>Future enhancements could summarise stock assessments...</p>", layersVisible: [] }
   };
 
   const themeTitleEl = document.getElementById("themeTitle");
   const themeContentEl = document.getElementById("themeContent");
   const tabButtons = document.querySelectorAll(".tab");
   const layerPanel = document.getElementById("layerPanel");
+
+  const chkAnnual = document.getElementById("toggleSST");  // Annual
+  const chkMonthly = document.getElementById("toggleChl"); // Monthly
+
+  // ---- TimeSlider: keep it always present; bind to the active layer ----
+  // Mount the panel if present in the DOM
   const timePanel = document.getElementById("timePanel");
-
-  // Reuse existing checkboxes in index.html:
-  //  - #toggleSST = Annual
-  //  - #toggleChl = Monthly
-  const chkAnnual = document.getElementById("toggleSST");
-  const chkMonthly = document.getElementById("toggleChl");
-
-  // ---- One TimeSlider that adapts to the active SST series ----
   if (timePanel) {
     timePanel.classList.add("esri-component", "esri-widget");
-    timePanel.setAttribute("role", "group");
-    timePanel.setAttribute("aria-label", "Time slider controls");
     view.ui.add(timePanel, { position: "top-right", index: 0 });
+    timePanel.style.display = ""; // always show; we decide functionality below
   }
 
   const timeSlider = new TimeSlider({
     container: "timeSlider",
-    view: view,
-    mode: "time-window"
+    view,
+    mode: "time-window" // This will set and react to view.timeExtent
   });
 
-  function hideTimePanel() {
-    if (!timePanel) { return; }
-    timePanel.style.display = "none";
-    timePanel.setAttribute("aria-hidden", "true");
-  }
-
-  function showTimePanel() {
-    if (!timePanel) { return; }
-    timePanel.style.display = "";
-    timePanel.removeAttribute("aria-hidden");
-  }
-
-  function getActiveLayer() {
-    if (chkMonthly && chkMonthly.checked && sstMonthly.visible) { return sstMonthly; }
-    if (chkAnnual && chkAnnual.checked && sstAnnual.visible) { return sstAnnual; }
+  /**
+   * Pick the first visible time-aware layer
+   */
+  function getActiveTimeLayer() {
+    const candidates = [sstMonthly, sstAnnual]; // prefer monthly if both are toggled
+    for (const lyr of candidates) {
+      if (lyr?.visible && lyr.timeInfo) return lyr;
+    }
     return null;
   }
 
-  function configureSliderFor(layer) {
+  /**
+   * Initialises/binds the slider to the layer's timeInfo
+   */
+  function bindSliderToLayer(layer) {
     if (!layer || !layer.timeInfo) {
-      if (timePanel) { timePanel.style.display = "none"; }
+      // If no time-aware layer is visible, clear the slider + view extent
+      timeSlider.fullTimeExtent = null;
+      timeSlider.values = null;
+      view.timeExtent = null;
       return;
     }
-    if (timePanel) { timePanel.style.display = "block"; }
-    timeSlider.fullTimeExtent = layer.timeInfo.fullTimeExtent;
 
-    var interval;
-    if (layer === sstMonthly) {
-      interval = { value: 1, unit: "months" };
-    } else if (layer === sstAnnual) {
-      interval = { value: 1, unit: "years" };
-    } else {
-      interval = layer.timeInfo.interval;
-    }
+    const { fullTimeExtent, interval } = layer.timeInfo;
 
-    timeSlider.stops = { interval: interval };
-    // IMPORTANT: always reset slider values to the active layer range,
-    // otherwise a previous range can filter the new layer to nothing.
-    timeSlider.values = [
-      layer.timeInfo.fullTimeExtent.start,
-      layer.timeInfo.fullTimeExtent.end
-    ];
+    // If service has an interval, use it; otherwise choose sensible default
+    const inferredInterval =
+      interval ||
+      (layer === sstMonthly
+        ? { value: 1, unit: "months" }
+        : { value: 1, unit: "years" });
+
+    timeSlider.fullTimeExtent = fullTimeExtent;
+    timeSlider.stops = { interval: inferredInterval };
+
+    // Reset slider to full span each time we switch datasets
+    timeSlider.values = [fullTimeExtent.start, fullTimeExtent.end];
+
+    // view.timeExtent will be driven by the slider since it’s bound to view
+    // (No extra watchers required)
   }
 
-  function updateLayerVisibility(selectedThemeKey) {
-    const t = themes[selectedThemeKey];
+  /**
+   * Update visible layers based on checkboxes and (re)bind slider
+   */
+  function applyVisibility() {
+    const wantsAnnual = !!chkAnnual?.checked;
+    const wantsMonthly = !!chkMonthly?.checked;
 
-    const wantsAnnual =
-      t.layersVisible.indexOf("sstAnnual") !== -1 &&
-      chkAnnual && chkAnnual.checked;
+    // Only allow one SST series at a time for clarity
+    // If both checked, prefer monthly
+    sstMonthly.visible = wantsMonthly || (wantsMonthly && wantsAnnual);
+    sstAnnual.visible = !sstMonthly.visible && wantsAnnual;
 
-    const wantsMonthly =
-      t.layersVisible.indexOf("sstMonthly") !== -1 &&
-      chkMonthly && chkMonthly.checked;
-
-    sstAnnual.visible = wantsAnnual;
-    sstMonthly.visible = wantsMonthly;
-
-    configureSliderFor(getActiveLayer());
+    bindSliderToLayer(getActiveTimeLayer());
   }
 
-  if (chkAnnual) {
-    chkAnnual.addEventListener("change", function () {
-      updateLayerVisibility(currentTheme);
-    });
-  }
-  if (chkMonthly) {
-    chkMonthly.addEventListener("change", function () {
-      updateLayerVisibility(currentTheme);
-    });
-  }
+  // Layer ready => (re)bind if this one is active
+  sstAnnual.when(() => { if (sstAnnual.visible) bindSliderToLayer(sstAnnual); });
+  sstMonthly.when(() => { if (sstMonthly.visible) bindSliderToLayer(sstMonthly); });
 
-  // ---- Theme switching ----
+  // Checkbox handlers
+  if (chkAnnual)  chkAnnual.addEventListener("change", applyVisibility);
+  if (chkMonthly) chkMonthly.addEventListener("change", applyVisibility);
+
+  // ---- Theme switching kept minimal; env shows layer panel; others hide it
   let currentTheme = "intro";
-  tabButtons.forEach(function (btn) {
-    btn.addEventListener("click", function () {
+  tabButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
       const key = btn.getAttribute("data-theme");
-      if (key) {
-        selectTheme(key);
+      if (!key) return;
+      currentTheme = key;
+
+      tabButtons.forEach((b) =>
+        b.classList.toggle("active", b.getAttribute("data-theme") === key)
+      );
+
+      const t = themes[key];
+      if (themeTitleEl) themeTitleEl.textContent = t.title;
+      if (themeContentEl) themeContentEl.innerHTML = t.content;
+      if (layerPanel) layerPanel.style.display = t.layersVisible?.length ? "block" : "none";
+
+      // When entering a non-env theme, hide both SST layers and clear slider
+      if (!(t.layersVisible?.length)) {
+        sstAnnual.visible = false;
+        sstMonthly.visible = false;
+        bindSliderToLayer(null);
+      } else {
+        // env theme: apply current checkboxes to decide active time layer
+        applyVisibility();
       }
     });
   });
 
-  function selectTheme(key) {
-    currentTheme = key;
-    tabButtons.forEach(function (btn) {
-      btn.classList.toggle("active", btn.getAttribute("data-theme") === key);
-    });
-    const t = themes[key];
-    if (themeTitleEl) {
-      themeTitleEl.textContent = t.title;
-    }
-    if (themeContentEl) {
-      themeContentEl.innerHTML = t.content;
-    }
-
-    const usesLayers = t.layersVisible && t.layersVisible.length > 0;
-    if (layerPanel) {
-      layerPanel.style.display = usesLayers ? "block" : "none";
-    }
-    // timePanel handled by configureSliderFor()
-
-    updateLayerVisibility(key);
-  }
-
-  // Wait for both SST layers before first slider setup
-  hideTimePanel();
-
-  Promise.all([sstAnnual.when(), sstMonthly.when()]).then(function () {
-    selectTheme("intro");
+  // Wait for both layers, then start on "intro"
+  Promise.all([sstAnnual.when(), sstMonthly.when()]).then(() => {
+    // Start on intro with slider idle
+    themeTitleEl && (themeTitleEl.textContent = themes.intro.title);
+    themeContentEl && (themeContentEl.innerHTML = themes.intro.content);
+    layerPanel && (layerPanel.style.display = "none");
+    // If you prefer to land directly on the env tab, uncomment:
+    // document.querySelector('.tab[data-theme="env"]').click();
   });
 
   // ---- Sanity warnings ----
