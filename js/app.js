@@ -70,10 +70,21 @@ require([
     constraints: { wrapAround: false, rotationEnabled: false, snapToZoom: false }
   });
 
-  // Add a legend and a scale bar to help interpret the map.  The legend
-  // automatically reflects the layers in the map’s operational stack.
-  view.ui.add(new Legend({ view }), "bottom-left");
+  // Add a scale bar to the map UI.  The legend will be placed in the
+  // sidebar instead of on the map.
   view.ui.add(new ScaleBar({ view, unit: "metric" }), "bottom-right");
+
+  // ---- Legend placement ----
+  // Inject the legend widget into the side panel so that it doesn't
+  // cover the map.  We look up the placeholder div defined in
+  // index.html (legendDiv).  If it exists, assign it as the container
+  // for the legend.  The widget will update automatically when layers
+  // are shown or hidden.
+  const legendDiv = document.getElementById('legendDiv');
+  let legend;
+  if (legendDiv) {
+    legend = new Legend({ view, container: legendDiv });
+  }
 
   // ---- Time‑aware raster layers ----
   // Sea‑surface temperature (SST) monthly and annual layers are delivered

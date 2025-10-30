@@ -73,7 +73,7 @@
 
       <div id="vectorPanel" class="section">
         <fieldset>
-          <legend>Vector overlays</legend>
+          <legend>Species overlays</legend>
           <div class="row">
             <label><input type="checkbox" id="chkAdmin" checked> Admin areas</label>
             <label><input type="checkbox" id="chkLines" checked> Species shift (lines)</label>
@@ -82,6 +82,29 @@
           </div>
         </fieldset>
       </div>
+
+      <!-- Environmental pressures panel: toggles for stress event overlays -->
+      <div id="pressuresPanel" class="section" style="display:none">
+        <fieldset>
+          <legend>Stress event overlays</legend>
+          <div class="row">
+            <label><input type="checkbox" id="chkMHW" checked> Marine heatwave mask</label>
+          </div>
+        </fieldset>
+      </div>
+
+      <!-- Jurisdictions panel: toggles for governance overlays -->
+      <div id="jurisPanel" class="section" style="display:none">
+        <fieldset>
+          <legend>Jurisdiction overlays</legend>
+          <div class="row">
+            <label><input type="checkbox" id="chkLME" checked> LME boundaries</label>
+          </div>
+        </fieldset>
+      </div>
+
+      <!-- Legend will be injected here by the application -->
+      <fieldset><div id="legendDiv" class="section"></div></fieldset>
     </aside>
 
     <section class="mapwrap">
