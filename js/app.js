@@ -101,6 +101,35 @@ require([
   const rasters = [sstMonthly, sstAnnual, chlMonthly];
   map.addMany(rasters);
 
+  // ---- Additional layers for other themes ----
+  // Marine heatwave (MHW) mask.  Only create if an ID is provided in the
+  // configuration under CFG.items.mhwId.  This is intended to be a
+  // time-enabled imagery layer representing stress events.  It remains
+  // invisible until the Environmental Pressures tab is active.
+  let mhwLayer = null;
+  if (items.mhwId) {
+    mhwLayer = new ImageryTileLayer({
+      portalItem: { id: items.mhwId },
+      title: "MHW mask (monthly)",
+      visible: false
+    });
+    map.add(mhwLayer);
+  }
+
+  // Large Marine Ecosystems (LME) boundaries.  Only create if an ID is
+  // provided in the configuration under CFG.items.lmeId.  This is a
+  // FeatureLayer representing governance boundaries.  It remains
+  // invisible until the Management Jurisdictions tab is active.
+  let lmeLayer = null;
+  if (items.lmeId) {
+    lmeLayer = new FeatureLayer({
+      portalItem: { id: items.lmeId },
+      title: "LME boundaries",
+      visible: false
+    });
+    map.add(lmeLayer);
+  }
+
   // ---- Vector overlay layers ----
   // The species/admin collection contains four sublayers: admin areas,
   // species shift lines, and start/end points.  Their visibility is
@@ -155,22 +184,26 @@ require([
         return;
       }
       timeSlider.fullTimeExtent = ti.fullTimeExtent;
-
-      // Wrap the service interval correctly.
-      const serviceInterval = ti.interval;
+      // Determine the interval: use the service interval if defined,
+      // otherwise guess monthly vs annual based on the selected layer.
       const guessedInterval = (layer === sstAnnual)
         ? { interval: { unit: "years", value: 1 } }
         : { interval: { unit: "months", value: 1 } };
+      // Wrap the service interval in an object expected by the TimeSlider.
+      // layer.timeInfo.interval is a TimeInterval object ({ value, unit }) but
+      // timeSlider.stops must be of the form { interval: { value, unit } }.
+      const serviceInterval = ti.interval;
       const stops = serviceInterval
         ? { interval: serviceInterval }
         : guessedInterval;
       timeSlider.stops = stops;
-
+      // Reset slider to the full span of the raster.  This uses two
+      // values (start and end) since the slider is in time‑window mode.
       timeSlider.values = [ti.fullTimeExtent.start, ti.fullTimeExtent.end];
+      // When the slider values change, update the map’s time extent.
       view.timeExtent = timeSlider.timeExtent;
     });
   }
-
 
   /**
    * Make the specified layer visible and hide the others.  Afterwards,
@@ -220,4 +253,197 @@ require([
   if (chkLines) chkLines.addEventListener("change", () => { spLines.visible    = chkLines.checked; });
   if (chkStart) chkStart.addEventListener("change", () => { spStart.visible    = chkStart.checked; });
   if (chkEnd)   chkEnd.addEventListener("change", () => { spEnd.visible      = chkEnd.checked; });
+
+  // ---- Additional overlay checkboxes ----
+  const chkMHW = document.getElementById("chkMHW");
+  if (chkMHW && mhwLayer) {
+    chkMHW.addEventListener("change", () => { mhwLayer.visible = chkMHW.checked; });
+  }
+  const chkLME = document.getElementById("chkLME");
+  if (chkLME && lmeLayer) {
+    chkLME.addEventListener("change", () => { lmeLayer.visible = chkLME.checked; });
+  }
+
+  // ---- Theme switching ----
+  // Define per-theme configuration: title, content, and which panels/widgets
+  // should be visible.  Descriptions may be replaced with actual copy and
+  // infographics when available.
+  const themes = {
+    intro: {
+      title: "Orientation",
+      content:
+        "<p>Welcome to the BECI dashboard. Use the tabs above to explore different aspects of the ocean–climate–fisheries system. This introduction provides orientation with branding, infographics and copy.</p>",
+      showLayerPanel: false,
+      showVectorPanel: false,
+      showPressuresPanel: false,
+      showJurisPanel: false,
+      showTimeSlider: false,
+      activateLayers: () => {
+        // hide all rasters and overlays
+        rasters.forEach(l => l.visible = false);
+        if (mhwLayer) mhwLayer.visible = false;
+        if (lmeLayer) lmeLayer.visible = false;
+        bindSliderTo(null);
+      }
+    },
+    env: {
+      title: "Baseline state",
+      content:
+        "<p>Environmental conditions such as sea surface temperature (SST) and chlorophyll‑<i>a</i> provide a baseline context. Use the radio buttons below to choose a dataset and scrub through time with the slider.</p>",
+      showLayerPanel: true,
+      showVectorPanel: true,
+      showPressuresPanel: false,
+      showJurisPanel: false,
+      showTimeSlider: true,
+      activateLayers: () => {
+        // make sure only the selected raster is visible
+        const checked = document.querySelector('input[name="rasterChoice"]:checked');
+        if (checked) {
+          if (checked.value === "sstMonthly") setOnlyVisible(sstMonthly);
+          if (checked.value === "sstAnnual")  setOnlyVisible(sstAnnual);
+          if (checked.value === "chlMonthly") setOnlyVisible(chlMonthly);
+        } else {
+          setOnlyVisible(sstMonthly);
+        }
+        // hide pressure/jurisdiction overlays
+        if (mhwLayer) mhwLayer.visible = false;
+        if (lmeLayer) lmeLayer.visible = false;
+      }
+    },
+    pressures: {
+      title: "Stress events",
+      content:
+        "<p>Explore environmental stress events such as marine heatwaves. Use the checkbox below to toggle the heatwave mask and scrub the timeline.</p>",
+      showLayerPanel: false,
+      showVectorPanel: false,
+      showPressuresPanel: true,
+      showJurisPanel: false,
+      showTimeSlider: true,
+      activateLayers: () => {
+        // hide SST/Chl‑a rasters
+        rasters.forEach(l => l.visible = false);
+        bindSliderTo(null);
+        // show MHW layer if exists
+        if (mhwLayer) {
+          mhwLayer.visible = chkMHW ? chkMHW.checked : true;
+          // bind slider to MHW layer
+          bindSliderTo(mhwLayer);
+        }
+        // hide species & LME overlays
+        if (lmeLayer) lmeLayer.visible = false;
+        adminAreas.visible = false;
+        spLines.visible = false;
+        spStart.visible = false;
+        spEnd.visible = false;
+      }
+    },
+    jurisdictions: {
+      title: "Governance",
+      content:
+        "<p>View management jurisdictions such as Large Marine Ecosystems (LMEs). Toggle boundaries below. Time series are not applicable here.</p>",
+      showLayerPanel: false,
+      showVectorPanel: false,
+      showPressuresPanel: false,
+      showJurisPanel: true,
+      showTimeSlider: false,
+      activateLayers: () => {
+        // hide all rasters and MHW
+        rasters.forEach(l => l.visible = false);
+        if (mhwLayer) mhwLayer.visible = false;
+        bindSliderTo(null);
+        // show LME boundaries if exists
+        if (lmeLayer) lmeLayer.visible = chkLME ? chkLME.checked : true;
+        // hide species overlays by default
+        adminAreas.visible = false;
+        spLines.visible = false;
+        spStart.visible = false;
+        spEnd.visible = false;
+      }
+    },
+    fish: {
+      title: "Ecosystem effects",
+      content:
+        "<p>Future enhancements will include fish stock models and OBIS snapshots. Stay tuned for interactivity linking graphs and maps.</p>",
+      showLayerPanel: false,
+      showVectorPanel: false,
+      showPressuresPanel: false,
+      showJurisPanel: false,
+      showTimeSlider: false,
+      activateLayers: () => {
+        rasters.forEach(l => l.visible = false);
+        if (mhwLayer) mhwLayer.visible = false;
+        if (lmeLayer) lmeLayer.visible = false;
+        bindSliderTo(null);
+        adminAreas.visible = false;
+        spLines.visible = false;
+        spStart.visible = false;
+        spEnd.visible = false;
+      }
+    }
+  };
+
+  // Grab references to DOM panels to show/hide
+  const layerPanelEl    = document.getElementById('layerPanel');
+  const vectorPanelEl   = document.getElementById('vectorPanel');
+  const pressuresPanelEl= document.getElementById('pressuresPanel');
+  const jurisPanelEl    = document.getElementById('jurisPanel');
+  const themeTitleEl    = document.getElementById('themeTitle');
+  const themeContentEl  = document.getElementById('themeContent');
+  const tabButtons      = document.querySelectorAll('.tab');
+
+  // Helper to set panel visibility
+  function showPanel(el, show) {
+    if (!el) return;
+    el.style.display = show ? '' : 'none';
+  }
+
+  // Theme switching handler
+  tabButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = btn.getAttribute('data-theme');
+      if (!key || !themes[key]) return;
+      // Set active tab
+      tabButtons.forEach(b => b.classList.toggle('is-active', b === btn));
+      const theme = themes[key];
+      // Update title and content
+      if (themeTitleEl) themeTitleEl.querySelector('h2').textContent = theme.title;
+      if (themeContentEl) themeContentEl.innerHTML = theme.content;
+      // Show/hide panels
+      showPanel(layerPanelEl,    theme.showLayerPanel);
+      showPanel(vectorPanelEl,   theme.showVectorPanel);
+      showPanel(pressuresPanelEl,theme.showPressuresPanel);
+      showPanel(jurisPanelEl,    theme.showJurisPanel);
+      // Toggle time slider visibility
+      timeSlider.visible = theme.showTimeSlider;
+      // Activate layers accordingly
+      theme.activateLayers();
+    });
+  });
+
+  // On load, activate intro theme explicitly
+  // On initial load, apply the intro theme settings: update UI and layer
+  // visibility.  This mirrors the behaviour of clicking the "Introduction"
+  // tab on startup.
+  (function initTheme() {
+    const key = 'intro';
+    const theme = themes[key];
+    if (!theme) return;
+    // Set active tab class on the first tab (Introduction)
+    tabButtons.forEach((b) => {
+      const isActive = b.getAttribute('data-theme') === key;
+      b.classList.toggle('is-active', isActive);
+    });
+    // Update title and content
+    if (themeTitleEl) themeTitleEl.querySelector('h2').textContent = theme.title;
+    if (themeContentEl) themeContentEl.innerHTML = theme.content;
+    // Show/hide panels
+    showPanel(layerPanelEl,    theme.showLayerPanel);
+    showPanel(vectorPanelEl,   theme.showVectorPanel);
+    showPanel(pressuresPanelEl,theme.showPressuresPanel);
+    showPanel(jurisPanelEl,    theme.showJurisPanel);
+    // Toggle time slider visibility
+    timeSlider.visible = theme.showTimeSlider;
+    // Activate layers
+    theme.activateLayers();
+  })();
 });
