@@ -17,7 +17,10 @@ require([
   "esri/layers/FeatureLayer",
   "esri/widgets/Legend",
   "esri/widgets/ScaleBar",
-  "esri/widgets/TimeSlider"
+  "esri/widgets/TimeSlider",
+  "esri/Basemap",
+  "esri/layers/TileLayer",
+  "esri/layers/VectorTileLayer"
 ], function (
   esriConfig,
   Map,
@@ -27,7 +30,10 @@ require([
   FeatureLayer,
   Legend,
   ScaleBar,
-  TimeSlider
+  TimeSlider,
+  Basemap,
+  TileLayer,
+  VectorTileLayer
 ) {
   // ---- Runtime configuration ----
   // Pull API key, spatial reference and portal item IDs from the injected
@@ -46,7 +52,21 @@ require([
   const wantsCustomSR = !!(CFG.spatialReference && CFG.basemapUrl);
   const spatialRef = wantsCustomSR ? CFG.spatialReference : { wkid: 3857 };
   const items = CFG.items || {};
-
+ // Custom Oceans basemap: base tiles without depth labels + land/place labels
+  const oceansNoDepths = new Basemap({
+    baseLayers: [
+      new TileLayer({
+        url: "https://services.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer"
+      })
+    ],
+    referenceLayers: [
+      new VectorTileLayer({
+        portalItem: {id: "14fbc125ccc9488888b014db09f35f67" }
+      })
+    ]
+  });
+  
+  
   // ---- Map and view ----
   // Use the Esri “oceans” basemap in Web Mercator unless the runtime
   // config specifies a different spatial reference.  A bespoke basemap
@@ -59,7 +79,8 @@ require([
   if (wantsCustomSR) {
     map = new Map({ basemap: { baseLayers: [ new ImageryLayer({ url: CFG.basemapUrl, spatialReference: spatialRef }) ], spatialReference: spatialRef } });
   } else {
-    map = new Map({ basemap: "oceans" });
+    //map = new Map({ basemap: "oceans" });
+    map = new Map({ basemap: oceansNoDepths });
   }
   const view = new MapView({
     container: "viewDiv",
