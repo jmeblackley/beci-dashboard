@@ -122,6 +122,15 @@ require([
     title: "SST (Annual)",
     visible: false
   });
+  // Marine Heat Wave (MHW) layer for environmental pressures.  This is a
+  // time‑enabled tiled imagery service representing monthly marine heat
+  // wave masks.  It is hidden by default and activated on the
+  // "Environmental pressures" tab.
+  const mhwLayer = new ImageryTileLayer({
+    portalItem: { id: items.mhwMonthlyId || "3eb9dc4649204d0498760ead24c58afc" },
+    title: "Marine Heat Wave (Monthly)",
+    visible: false
+  });
   // Chlorophyll is published as a tiled imagery service (see service
   // description).  Use ImageryTileLayer instead of ImageryLayer so that
   // timeInfo and tiling information are respected.
@@ -132,21 +141,10 @@ require([
   });
   const rasters = [sstMonthly, sstAnnual, chlMonthly];
   map.addMany(rasters);
+  // Add the MHW layer separately (not part of rasters array).  It
+  // remains hidden until the Environmental pressures tab is selected.
+  map.add(mhwLayer);
 
-  // ---- Additional layers for other themes ----
-  // Marine heatwave (MHW) mask.  Only create if an ID is provided in the
-  // configuration under CFG.items.mhwId.  This is intended to be a
-  // time-enabled imagery layer representing stress events.  It remains
-  // invisible until the Environmental Pressures tab is active.
-  let mhwLayer = null;
-  if (items.mhwId) {
-    mhwLayer = new ImageryTileLayer({
-      portalItem: { id: items.mhwId },
-      title: "MHW mask (monthly)",
-      visible: false
-    });
-    map.add(mhwLayer);
-  }
 
   // Large Marine Ecosystems (LME) boundaries.  Only create if an ID is
   // provided in the configuration under CFG.items.lmeId.  This is a
@@ -172,6 +170,36 @@ require([
   const spStart    = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 1, title: "Species shift (start)", visible: true });
   const spEnd      = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 0, title: "Species shift (end)", visible: true });
   map.addMany([adminAreas, spLines, spStart, spEnd]);
+
+  // ---- Fish impact layers (point features) ----
+  // Add hosted feature layers for fish impacts and stock status.  These
+  // layers are stored as hosted feature services on AGOL and include a
+  // ``popup`` field containing preformatted HTML/text for pop‑ups.  Use
+  // fallbacks if the corresponding item IDs are not provided in the
+  // runtime configuration.  By default these layers are hidden until
+  // the "Fish impacts" tab is selected.
+  const impactLayer = new FeatureLayer({
+    portalItem: { id: items.impactMapId || "5a820135359e42ac9fe107e3043e5a33" },
+    title: "Impact Map",
+    visible: false,
+    popupTemplate: {
+      title: "{impact_type}",
+      // Use the popup field created in the GeoJSON to supply formatted
+      // content.  If the field is named popup_text instead, the AGOL
+      // feature layer should alias it as 'popup' for consistency.
+      content: "{popup}"
+    }
+  });
+  const stockLayer = new FeatureLayer({
+    portalItem: { id: items.stockStatusId || "7ac11d00696c4760bd80666254ca2c6f" },
+    title: "Stock Status",
+    visible: false,
+    popupTemplate: {
+      title: "{species_name}",
+      content: "{popup}"
+    }
+  });
+  map.addMany([impactLayer, stockLayer]);
 
   // ---- TimeSlider widget ----
   // Create a TimeSlider with two thumbs (“time‑window” mode).  It is
@@ -316,6 +344,9 @@ require([
         if (mhwLayer) mhwLayer.visible = false;
         if (lmeLayer) lmeLayer.visible = false;
         bindSliderTo(null);
+        // hide fish impact layers
+        impactLayer.visible = false;
+        stockLayer.visible = false;
       }
     },
     env: {
@@ -340,6 +371,9 @@ require([
         // hide pressure/jurisdiction overlays
         if (mhwLayer) mhwLayer.visible = false;
         if (lmeLayer) lmeLayer.visible = false;
+        // hide fish impact layers
+        impactLayer.visible = false;
+        stockLayer.visible = false;
       }
     },
     pressures: {
@@ -367,6 +401,9 @@ require([
         spLines.visible = false;
         spStart.visible = false;
         spEnd.visible = false;
+        // hide fish impact layers
+        impactLayer.visible = false;
+        stockLayer.visible = false;
       }
     },
     jurisdictions: {
@@ -390,26 +427,34 @@ require([
         spLines.visible = false;
         spStart.visible = false;
         spEnd.visible = false;
+        // hide fish impact layers
+        impactLayer.visible = false;
+        stockLayer.visible = false;
       }
     },
     fish: {
       title: "Ecosystem effects",
       content:
-        "<p>Future enhancements will include fish stock models and OBIS snapshots. Stay tuned for interactivity linking graphs and maps.</p>",
+        "<p>This tab displays point layers representing fish stock status and observed ecosystem impacts. Click or tap on a point to view detailed information in a popup.</p>",
       showLayerPanel: false,
       showVectorPanel: false,
       showPressuresPanel: false,
       showJurisPanel: false,
       showTimeSlider: false,
       activateLayers: () => {
+        // Hide all time‑aware rasters and other overlays
         rasters.forEach(l => l.visible = false);
         if (mhwLayer) mhwLayer.visible = false;
         if (lmeLayer) lmeLayer.visible = false;
         bindSliderTo(null);
+        // Hide species overlay layers
         adminAreas.visible = false;
         spLines.visible = false;
         spStart.visible = false;
         spEnd.visible = false;
+        // Show fish impact layers
+        impactLayer.visible = true;
+        stockLayer.visible = true;
       }
     }
   };
