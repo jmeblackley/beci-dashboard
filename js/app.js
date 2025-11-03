@@ -1,13 +1,4 @@
 // Revised application logic for the BECI dashboard POC.
-//
-// This version restores the original TimeSlider behaviour (two‑thumb time
-// window) while retaining the streamlined UI from the proof‑of‑concept.  It
-// reads portal item IDs and other runtime options from `window.BECI_CONFIG`
-// (loaded from config.local.js in the project root) and binds the slider to
-// whichever time‑aware raster layer is currently visible.  Only one raster
-// is shown at a time to avoid ambiguous temporal states.  Vector overlays
-// (administrative areas and species shifts) are controlled via checkboxes.
-
 require([
   "esri/config",
   "esri/Map",
@@ -36,23 +27,14 @@ require([
   VectorTileLayer
 ) {
   // ---- Runtime configuration ----
-  // Pull API key, spatial reference and portal item IDs from the injected
-  // config.  The config is defined in `config.local.js` and attached to
-  // window.BECI_CONFIG.  Fallbacks are provided for all values in case a
-  // particular field is omitted.
   const CFG = window.BECI_CONFIG || {};
   esriConfig.apiKey = CFG.apiKey || "";
 
-  // Determine whether to honour a custom spatial reference.  If both a
-  // spatialReference and a corresponding basemapUrl are supplied via
-  // the runtime config, we will attempt to use them; otherwise we
-  // default to Web Mercator (wkid 3857).  Most Esri basemaps do not
-  // support arbitrary projections, so using a custom SR without a
-  // matching basemap will cause the map to fail to draw.
   const wantsCustomSR = !!(CFG.spatialReference && CFG.basemapUrl);
   const spatialRef = wantsCustomSR ? CFG.spatialReference : { wkid: 3857 };
   const items = CFG.items || {};
- // Custom Oceans basemap: base tiles without depth labels + land/place labels
+
+  // Oceans basemap without bathy labels + vector reference
   const oceansNoDepths = new Basemap({
     baseLayers: [
       new TileLayer({
@@ -61,27 +43,24 @@ require([
     ],
     referenceLayers: [
       new VectorTileLayer({
-        portalItem: {id: "14fbc125ccc9488888b014db09f35f67" }
+        portalItem: { id: "14fbc125ccc9488888b014db09f35f67" }
       })
     ]
   });
-  
-  
+
   // ---- Map and view ----
-  // Use the Esri “oceans” basemap in Web Mercator unless the runtime
-  // config specifies a different spatial reference.  A bespoke basemap
-  // implementation (e.g. using a custom URL) could be added here if
-  // necessary; for this POC the default basemap is sufficient.
-  // Create the map.  If a custom basemap is requested (with SR and URL),
-  // build a basemap from the provided layer; otherwise use the default
-  // "oceans" basemap in Web Mercator.
   let map;
   if (wantsCustomSR) {
-    map = new Map({ basemap: { baseLayers: [ new ImageryLayer({ url: CFG.basemapUrl, spatialReference: spatialRef }) ], spatialReference: spatialRef } });
+    map = new Map({
+      basemap: {
+        baseLayers: [ new ImageryLayer({ url: CFG.basemapUrl, spatialReference: spatialRef }) ],
+        spatialReference: spatialRef
+      }
+    });
   } else {
-    //map = new Map({ basemap: "oceans" });
     map = new Map({ basemap: oceansNoDepths });
   }
+
   const view = new MapView({
     container: "viewDiv",
     map,
@@ -91,27 +70,14 @@ require([
     constraints: { wrapAround: false, rotationEnabled: false, snapToZoom: false }
   });
 
-  // Add a scale bar to the map UI.  The legend will be placed in the
-  // sidebar instead of on the map.
   view.ui.add(new ScaleBar({ view, unit: "metric" }), "bottom-right");
 
-  // ---- Legend placement ----
-  // Inject the legend widget into the side panel so that it doesn't
-  // cover the map.  We look up the placeholder div defined in
-  // index.html (legendDiv).  If it exists, assign it as the container
-  // for the legend.  The widget will update automatically when layers
-  // are shown or hidden.
+  // ---- Legend in left panel ----
   const legendDiv = document.getElementById('legendDiv');
   let legend;
-  if (legendDiv) {
-    legend = new Legend({ view, container: legendDiv });
-  }
+  if (legendDiv) legend = new Legend({ view, container: legendDiv });
 
-  // ---- Time‑aware raster layers ----
-  // Sea‑surface temperature (SST) monthly and annual layers are delivered
-  // as tiled imagery services when published that way.  Chlorophyll is
-  // served as a dynamic imagery service.  IDs are pulled from the config
-  // where possible.  Only one of these rasters will be visible at any time.
+  // ---- Time-aware rasters ----
   const sstMonthly = new ImageryTileLayer({
     portalItem: { id: items.sstMonthlyId || "8c551d176e0e48ddaec623545f4899f2" },
     title: "SST (Monthly)",
@@ -122,34 +88,22 @@ require([
     title: "SST (Annual)",
     visible: false
   });
-  // Marine Heat Wave (MHW) layer for environmental pressures.  This is a
-  // time‑enabled tiled imagery service representing monthly marine heat
-  // wave masks.  It is hidden by default and activated on the
-  // "Environmental pressures" tab.
   const mhwLayer = new ImageryTileLayer({
     portalItem: { id: items.mhwMonthlyId || "3eb9dc4649204d0498760ead24c58afc" },
     title: "Marine Heat Wave (Monthly)",
     visible: false
   });
-  // Chlorophyll is published as a tiled imagery service (see service
-  // description).  Use ImageryTileLayer instead of ImageryLayer so that
-  // timeInfo and tiling information are respected.
   const chlMonthly = new ImageryTileLayer({
     portalItem: { id: items.chlMonthlyId || "f08e5246b0814aabb1df13dae5ec862b" },
     title: "Chlorophyll (Monthly)",
     visible: false
   });
+
   const rasters = [sstMonthly, sstAnnual, chlMonthly];
   map.addMany(rasters);
-  // Add the MHW layer separately (not part of rasters array).  It
-  // remains hidden until the Environmental pressures tab is selected.
   map.add(mhwLayer);
 
-
-  // Large Marine Ecosystems (LME) boundaries.  Only create if an ID is
-  // provided in the configuration under CFG.items.lmeId.  This is a
-  // FeatureLayer representing governance boundaries.  It remains
-  // invisible until the Management Jurisdictions tab is active.
+  // ---- LME boundaries (optional) ----
   let lmeLayer = null;
   if (items.lmeId) {
     lmeLayer = new FeatureLayer({
@@ -160,10 +114,7 @@ require([
     map.add(lmeLayer);
   }
 
-  // ---- Vector overlay layers ----
-  // The species/admin collection contains four sublayers: admin areas,
-  // species shift lines, and start/end points.  Their visibility is
-  // toggled independently via checkboxes in the UI.
+  // ---- Species/admin overlays ----
   const speciesItemId = items.speciesCollectionId || "f97d35b2f30c4c1fb29df6c7df9030d5";
   const adminAreas = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 3, title: "Admin areas", opacity: 0.25, visible: true });
   const spLines    = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 2, title: "Species shift (lines)", visible: true });
@@ -171,63 +122,146 @@ require([
   const spEnd      = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 0, title: "Species shift (end)", visible: true });
   map.addMany([adminAreas, spLines, spStart, spEnd]);
 
-  // ---- Fish impact layers (point features) ----
-  // Add hosted feature layers for fish impacts and stock status.  These
-  // layers are stored as hosted feature services on AGOL and include a
-  // ``popup`` field containing preformatted HTML/text for pop‑ups.  Use
-  // fallbacks if the corresponding item IDs are not provided in the
-  // runtime configuration.  By default these layers are hidden until
-  // the "Fish impacts" tab is selected.
+  // ---- Fish impact layers (IDs now read from config) ----
+  // Helpers (unchanged from previous step) for renderers
+  function parseHexColor(hex, alpha = 1) {
+    if (!hex) return [128, 128, 128, alpha];
+    const h = hex.trim().replace('#', '');
+    const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+    const r = parseInt(full.substr(0, 2), 16);
+    const g = parseInt(full.substr(2, 2), 16);
+    const b = parseInt(full.substr(4, 2), 16);
+    return [r, g, b, alpha];
+  }
+  function dedupe(arr, keyFn) {
+    const s = new Set();
+    return arr.filter(v => {
+      const k = keyFn(v);
+      if (s.has(k)) return false;
+      s.add(k);
+      return true;
+    });
+  }
+  const IMPACT_PALETTE = [
+    [38, 70, 83, 1], [231, 111, 81, 1], [42, 157, 143, 1], [244, 162, 97, 1],
+    [233, 196, 106, 1], [90, 122, 166, 1], [188, 80, 144, 1], [124, 173, 67, 1],
+  ];
+  function pickImpactColor(index) { return IMPACT_PALETTE[index % IMPACT_PALETTE.length]; }
+
   const impactLayer = new FeatureLayer({
     portalItem: { id: items.impactMapId || "5a820135359e42ac9fe107e3043e5a33" },
     title: "Impact Map",
     visible: false,
-    popupTemplate: {
-      title: "{impact_type}",
-      // Use the popup field created in the GeoJSON to supply formatted
-      // content.  If the field is named popup_text instead, the AGOL
-      // feature layer should alias it as 'popup' for consistency.
-      content: "{popup}"
-    }
+    outFields: ["*"],
+    popupTemplate: { title: "{Impact_Type}", content: "{popup}" }
   });
   const stockLayer = new FeatureLayer({
     portalItem: { id: items.stockStatusId || "7ac11d00696c4760bd80666254ca2c6f" },
     title: "Stock Status",
     visible: false,
-    popupTemplate: {
-      title: "{species_name}",
-      content: "{popup}"
-    }
+    outFields: ["*"],
+    popupTemplate: { title: "{species_name}", content: "{popup}" }
   });
   map.addMany([impactLayer, stockLayer]);
 
-  // ---- TimeSlider widget ----
-  // Create a TimeSlider with two thumbs (“time‑window” mode).  It is
-  // injected into the map’s UI (bottom‑right) rather than using the
-  // legacy custom time bar.  The slider is bound to whichever raster is
-  // currently visible and time‑enabled.  When the user scrubs the slider,
-  // the view’s timeExtent is updated to filter the raster accordingly.
-  const timeSlider = new TimeSlider({
-    view,
-    mode: "time-window"
-  });
-  view.ui.add(timeSlider, "bottom-right");
+  // Renderers (unchanged logic)
+  function applyStockRenderer() {
+    stockLayer.queryFeatures({
+      where: "status_label IS NOT NULL",
+      outFields: ["status_label", "status_color"],
+      returnGeometry: false
+    }).then((fs) => {
+      const rows = fs.features.map(f => ({
+        label: f.attributes.status_label,
+        color: f.attributes.status_color
+      }));
+      const uniq = dedupe(rows, r => `${r.label}|${r.color}`);
+      const uniqueValueInfos = uniq.map((r) => ({
+        value: r.label,
+        label: r.label,
+        symbol: {
+          type: "simple-marker",
+          size: 9,
+          color: parseHexColor(r.color, 0.95),
+          outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+        }
+      }));
+      stockLayer.renderer = {
+        type: "unique-value",
+        field: "status_label",
+        defaultSymbol: {
+          type: "simple-marker",
+          size: 9,
+          color: [150, 150, 150, 0.9],
+          outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+        },
+        defaultLabel: "Other/Unknown",
+        uniqueValueInfos
+      };
+    });
+  }
 
-  // Configure playback options.  Setting playRate defines how quickly
-  // the slider thumbs advance when the play button is engaged (in
-  // milliseconds per stop).  Enabling loop allows the animation to
-  // restart automatically when it reaches the end of the range.  These
-  // settings also ensure the play button is enabled when a time extent
-  // and stops are defined.
-  timeSlider.playRate = 1000; // one second per interval
+  function applyImpactRenderer() {
+    impactLayer.queryFeatures({
+      where: "Impact_Type IS NOT NULL",
+      outFields: ["Impact_Type"],
+      returnGeometry: false
+    }).then((fs) => {
+      const types = dedupe(
+        fs.features.map(f => f.attributes.Impact_Type).filter(Boolean),
+        t => t
+      );
+      const uniqueValueInfos = types.map((t, i) => ({
+        value: t,
+        label: t,
+        symbol: {
+          type: "simple-marker",
+          size: 10,
+          color: pickImpactColor(i),
+          outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+        }
+      }));
+      impactLayer.renderer = {
+        type: "unique-value",
+        field: "Impact_Type",
+        defaultSymbol: {
+          type: "simple-marker",
+          size: 10,
+          color: [120, 120, 120, 0.9],
+          outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+        },
+        defaultLabel: "Other/Unspecified",
+        uniqueValueInfos,
+        visualVariables: [
+          {
+            type: "size",
+            valueExpression: `
+              var s = Upper($feature.Severity);
+              Decode(s,
+                'LOW', 6,
+                'MEDIUM', 10,
+                'MODERATE', 10,
+                'HIGH', 14,
+                9
+              );
+            `,
+            minDataValue: 6,
+            maxDataValue: 14
+          }
+        ]
+      };
+    });
+  }
+
+  applyStockRenderer();
+  applyImpactRenderer();
+
+  // ---- TimeSlider ----
+  const timeSlider = new TimeSlider({ view, mode: "time-window" });
+  view.ui.add(timeSlider, "bottom-right");
+  timeSlider.playRate = 1000;
   timeSlider.loop = true;
 
-  /**
-   * Bind the TimeSlider to the given raster layer.  This function waits
-   * for the layer to finish loading so that its timeInfo becomes
-   * available.  If no timeInfo is present, the slider is cleared.
-   * @param {ImageryLayer|ImageryTileLayer} layer The active time‑aware layer.
-   */
   function bindSliderTo(layer) {
     if (!layer) {
       timeSlider.fullTimeExtent = null;
@@ -244,50 +278,26 @@ require([
         return;
       }
       timeSlider.fullTimeExtent = ti.fullTimeExtent;
-      // Determine the interval: use the service interval if defined,
-      // otherwise guess monthly vs annual based on the selected layer.
       const guessedInterval = (layer === sstAnnual)
         ? { interval: { unit: "years", value: 1 } }
         : { interval: { unit: "months", value: 1 } };
-      // Wrap the service interval in an object expected by the TimeSlider.
-      // layer.timeInfo.interval is a TimeInterval object ({ value, unit }) but
-      // timeSlider.stops must be of the form { interval: { value, unit } }.
       const serviceInterval = ti.interval;
-      const stops = serviceInterval
-        ? { interval: serviceInterval }
-        : guessedInterval;
+      const stops = serviceInterval ? { interval: serviceInterval } : guessedInterval;
       timeSlider.stops = stops;
-      // Reset slider to the full span of the raster.  This uses two
-      // values (start and end) since the slider is in time‑window mode.
       timeSlider.values = [ti.fullTimeExtent.start, ti.fullTimeExtent.end];
-      // When the slider values change, update the map’s time extent.
       view.timeExtent = timeSlider.timeExtent;
     });
   }
 
-  /**
-   * Make the specified layer visible and hide the others.  Afterwards,
-   * bind the slider to the visible layer so that its timeInfo drives the
-   * slider’s extent and interval.
-   * @param {ImageryLayer|ImageryTileLayer} activeLayer The layer to show.
-   */
   function setOnlyVisible(activeLayer) {
-    rasters.forEach((layer) => {
-      layer.visible = (layer === activeLayer);
-    });
+    rasters.forEach((layer) => { layer.visible = (layer === activeLayer); });
     bindSliderTo(activeLayer);
   }
 
-  // Initial binding: SST monthly is visible by default.
   bindSliderTo(sstMonthly);
+  timeSlider.watch("timeExtent", (te) => { view.timeExtent = te; });
 
-  // Listen for slider changes to keep the view’s time extent in sync.
-  timeSlider.watch("timeExtent", (te) => {
-    view.timeExtent = te;
-  });
-
-  // ---- UI wiring: raster radio buttons ----
-  // Radio inputs defined in index.html control which raster is visible.
+  // ---- Raster radio buttons ----
   const radios = document.querySelectorAll('input[name="rasterChoice"]');
   radios.forEach((r) => {
     r.addEventListener("change", () => {
@@ -301,10 +311,7 @@ require([
     });
   });
 
-  // ---- UI wiring: vector overlay checkboxes ----
-  // Toggle the visibility of the admin/species layers based on the
-  // checkboxes in the sidebar.  Each checkbox has an id corresponding
-  // to the layer it controls (e.g. chkAdmin => adminAreas).
+  // ---- Overlay checkboxes ----
   const chkAdmin = document.getElementById("chkAdmin");
   const chkLines = document.getElementById("chkLines");
   const chkStart = document.getElementById("chkStart");
@@ -312,22 +319,36 @@ require([
   if (chkAdmin) chkAdmin.addEventListener("change", () => { adminAreas.visible = chkAdmin.checked; });
   if (chkLines) chkLines.addEventListener("change", () => { spLines.visible    = chkLines.checked; });
   if (chkStart) chkStart.addEventListener("change", () => { spStart.visible    = chkStart.checked; });
-  if (chkEnd)   chkEnd.addEventListener("change", () => { spEnd.visible      = chkEnd.checked; });
+  if (chkEnd)   chkEnd.addEventListener("change", () => { spEnd.visible        = chkEnd.checked; });
 
-  // ---- Additional overlay checkboxes ----
   const chkMHW = document.getElementById("chkMHW");
-  if (chkMHW && mhwLayer) {
-    chkMHW.addEventListener("change", () => { mhwLayer.visible = chkMHW.checked; });
-  }
+  if (chkMHW && mhwLayer) chkMHW.addEventListener("change", () => { mhwLayer.visible = chkMHW.checked; });
   const chkLME = document.getElementById("chkLME");
-  if (chkLME && lmeLayer) {
-    chkLME.addEventListener("change", () => { lmeLayer.visible = chkLME.checked; });
+  if (chkLME && lmeLayer) chkLME.addEventListener("change", () => { lmeLayer.visible = chkLME.checked; });
+
+  // ---- Fish layer toggles (resilient to late DOM insertion) ----
+  const chkStock  = document.getElementById("chkStock");   // optional
+  const chkImpact = document.getElementById("chkImpact");  // optional
+
+  function syncFishToggles() {
+    const stockOn  = chkStock  ? !!chkStock.checked  : true;
+    const impactOn = chkImpact ? !!chkImpact.checked : true;
+    stockLayer.visible  = stockOn;
+    impactLayer.visible = impactOn;
+    if (legend) legend.view = view; // keep legend current
   }
 
-  // ---- Theme switching ----
-  // Define per-theme configuration: title, content, and which panels/widgets
-  // should be visible.  Descriptions may be replaced with actual copy and
-  // infographics when available.
+  if (chkStock)  chkStock.addEventListener("change", syncFishToggles);
+  if (chkImpact) chkImpact.addEventListener("change", syncFishToggles);
+
+  // NEW: if checkboxes appear later (e.g., panel lazy-render), delegation still works
+  document.addEventListener("change", (e) => {
+    if (e.target && (e.target.id === "chkStock" || e.target.id === "chkImpact")) {
+      syncFishToggles();
+    }
+  });
+
+  // ---- Themes ----
   const themes = {
     intro: {
       title: "Orientation",
@@ -339,12 +360,10 @@ require([
       showJurisPanel: false,
       showTimeSlider: false,
       activateLayers: () => {
-        // hide all rasters and overlays
         rasters.forEach(l => l.visible = false);
         if (mhwLayer) mhwLayer.visible = false;
         if (lmeLayer) lmeLayer.visible = false;
         bindSliderTo(null);
-        // hide fish impact layers
         impactLayer.visible = false;
         stockLayer.visible = false;
       }
@@ -352,14 +371,13 @@ require([
     env: {
       title: "Baseline state",
       content:
-        "<p>Environmental conditions such as sea surface temperature (SST) and chlorophyll‑<i>a</i> provide a baseline context. Use the radio buttons below to choose a dataset and scrub through time with the slider.</p>",
+        "<p>Environmental conditions such as sea surface temperature (SST) and chlorophyll-<i>a</i> provide a baseline context. Use the radio buttons below to choose a dataset and scrub through time with the slider.</p>",
       showLayerPanel: true,
       showVectorPanel: true,
       showPressuresPanel: false,
       showJurisPanel: false,
       showTimeSlider: true,
       activateLayers: () => {
-        // make sure only the selected raster is visible
         const checked = document.querySelector('input[name="rasterChoice"]:checked');
         if (checked) {
           if (checked.value === "sstMonthly") setOnlyVisible(sstMonthly);
@@ -368,10 +386,8 @@ require([
         } else {
           setOnlyVisible(sstMonthly);
         }
-        // hide pressure/jurisdiction overlays
         if (mhwLayer) mhwLayer.visible = false;
         if (lmeLayer) lmeLayer.visible = false;
-        // hide fish impact layers
         impactLayer.visible = false;
         stockLayer.visible = false;
       }
@@ -386,22 +402,17 @@ require([
       showJurisPanel: false,
       showTimeSlider: true,
       activateLayers: () => {
-        // hide SST/Chl‑a rasters
         rasters.forEach(l => l.visible = false);
         bindSliderTo(null);
-        // show MHW layer if exists
         if (mhwLayer) {
           mhwLayer.visible = chkMHW ? chkMHW.checked : true;
-          // bind slider to MHW layer
           bindSliderTo(mhwLayer);
         }
-        // hide species & LME overlays
         if (lmeLayer) lmeLayer.visible = false;
         adminAreas.visible = false;
         spLines.visible = false;
         spStart.visible = false;
         spEnd.visible = false;
-        // hide fish impact layers
         impactLayer.visible = false;
         stockLayer.visible = false;
       }
@@ -416,18 +427,14 @@ require([
       showJurisPanel: true,
       showTimeSlider: false,
       activateLayers: () => {
-        // hide all rasters and MHW
         rasters.forEach(l => l.visible = false);
         if (mhwLayer) mhwLayer.visible = false;
         bindSliderTo(null);
-        // show LME boundaries if exists
         if (lmeLayer) lmeLayer.visible = chkLME ? chkLME.checked : true;
-        // hide species overlays by default
         adminAreas.visible = false;
         spLines.visible = false;
         spStart.visible = false;
         spEnd.visible = false;
-        // hide fish impact layers
         impactLayer.visible = false;
         stockLayer.visible = false;
       }
@@ -442,85 +449,68 @@ require([
       showJurisPanel: false,
       showTimeSlider: false,
       activateLayers: () => {
-        // Hide all time‑aware rasters and other overlays
         rasters.forEach(l => l.visible = false);
         if (mhwLayer) mhwLayer.visible = false;
         if (lmeLayer) lmeLayer.visible = false;
         bindSliderTo(null);
-        // Hide species overlay layers
         adminAreas.visible = false;
         spLines.visible = false;
         spStart.visible = false;
         spEnd.visible = false;
-        // Show fish impact layers
-        impactLayer.visible = true;
-        stockLayer.visible = true;
+
+        // Ensure fish layers reflect current (or default) checkbox state
+        syncFishToggles();
       }
     }
   };
 
-  // Grab references to DOM panels to show/hide
-  const layerPanelEl    = document.getElementById('layerPanel');
-  const vectorPanelEl   = document.getElementById('vectorPanel');
-  const pressuresPanelEl= document.getElementById('pressuresPanel');
-  const jurisPanelEl    = document.getElementById('jurisPanel');
-  const themeTitleEl    = document.getElementById('themeTitle');
-  const themeContentEl  = document.getElementById('themeContent');
-  const tabButtons      = document.querySelectorAll('.tab');
+  // ---- Panel wiring ----
+  const layerPanelEl     = document.getElementById('layerPanel');
+  const vectorPanelEl    = document.getElementById('vectorPanel');
+  const pressuresPanelEl = document.getElementById('pressuresPanel');
+  const jurisPanelEl     = document.getElementById('jurisPanel');
+  const themeTitleEl     = document.getElementById('themeTitle');
+  const themeContentEl   = document.getElementById('themeContent');
+  const tabButtons       = document.querySelectorAll('.tab');
 
-  // Helper to set panel visibility
-  function showPanel(el, show) {
-    if (!el) return;
-    el.style.display = show ? '' : 'none';
-  }
+  function showPanel(el, show) { if (el) el.style.display = show ? '' : 'none'; }
 
-  // Theme switching handler
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const key = btn.getAttribute('data-theme');
       if (!key || !themes[key]) return;
-      // Set active tab
       tabButtons.forEach(b => b.classList.toggle('is-active', b === btn));
       const theme = themes[key];
-      // Update title and content
       if (themeTitleEl) themeTitleEl.querySelector('h2').textContent = theme.title;
       if (themeContentEl) themeContentEl.innerHTML = theme.content;
-      // Show/hide panels
-      showPanel(layerPanelEl,    theme.showLayerPanel);
-      showPanel(vectorPanelEl,   theme.showVectorPanel);
-      showPanel(pressuresPanelEl,theme.showPressuresPanel);
-      showPanel(jurisPanelEl,    theme.showJurisPanel);
-      // Toggle time slider visibility
+      showPanel(layerPanelEl,     theme.showLayerPanel);
+      showPanel(vectorPanelEl,    theme.showVectorPanel);
+      showPanel(pressuresPanelEl, theme.showPressuresPanel);
+      showPanel(jurisPanelEl,     theme.showJurisPanel);
       timeSlider.visible = theme.showTimeSlider;
-      // Activate layers accordingly
       theme.activateLayers();
     });
   });
 
-  // On load, activate intro theme explicitly
-  // On initial load, apply the intro theme settings: update UI and layer
-  // visibility.  This mirrors the behaviour of clicking the "Introduction"
-  // tab on startup.
+  // Initial theme
   (function initTheme() {
     const key = 'intro';
     const theme = themes[key];
     if (!theme) return;
-    // Set active tab class on the first tab (Introduction)
     tabButtons.forEach((b) => {
       const isActive = b.getAttribute('data-theme') === key;
       b.classList.toggle('is-active', isActive);
     });
-    // Update title and content
     if (themeTitleEl) themeTitleEl.querySelector('h2').textContent = theme.title;
     if (themeContentEl) themeContentEl.innerHTML = theme.content;
-    // Show/hide panels
-    showPanel(layerPanelEl,    theme.showLayerPanel);
-    showPanel(vectorPanelEl,   theme.showVectorPanel);
-    showPanel(pressuresPanelEl,theme.showPressuresPanel);
-    showPanel(jurisPanelEl,    theme.showJurisPanel);
-    // Toggle time slider visibility
+    showPanel(layerPanelEl,     theme.showLayerPanel);
+    showPanel(vectorPanelEl,    theme.showVectorPanel);
+    showPanel(pressuresPanelEl, theme.showPressuresPanel);
+    showPanel(jurisPanelEl,     theme.showJurisPanel);
     timeSlider.visible = theme.showTimeSlider;
-    // Activate layers
     theme.activateLayers();
+
+    // Ensure fish layer visibility matches any existing checkboxes at load
+    syncFishToggles();
   })();
 });
