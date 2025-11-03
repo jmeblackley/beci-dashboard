@@ -99,6 +99,126 @@ require([
     visible: false
   });
 
+  // -----------------------------------------------------------------------------
+  // Custom renderers for raster layers
+  //
+  // The default renderers for these imagery layers use a generic color stretch
+  // that produces a rainbow‑like palette. To better align with NOAA’s
+  // visualization styles (see the provided reference images), we define two
+  // custom `raster-stretch` renderers below. These renderers use multipart
+  // algorithmic colour ramps that transition smoothly through a series of colours.
+  //
+  // For sea surface temperature (SST) layers we follow a cool‑to‑warm palette:
+  // deep blue → blue → purple → pink → orange.  This helps communicate
+  // temperature gradients from cold waters (dark blues) to warm waters (warm
+  // oranges).  The ranges roughly correspond to the typical SST span of
+  // approximately −2 °C to 35 °C, but the renderer will work with whatever
+  // statistics are provided by the service.
+  const sstRenderer = {
+    type: "raster-stretch",
+    stretchType: "min-max",
+    colorRamp: {
+      type: "multipart",
+      colorRamps: [
+        {
+          // Segment 1: very cold → cold
+          type: "algorithmic",
+          fromColor: [8, 29, 88, 255],    // #081d58 dark navy
+          toColor: [37, 52, 148, 255],    // #253494 deep blue
+          algorithm: "lab-lch"
+        },
+        {
+          // Segment 2: cold → moderate
+          type: "algorithmic",
+          fromColor: [37, 52, 148, 255],  // #253494 deep blue
+          toColor: [108, 93, 154, 255],   // #6c5d9a purple
+          algorithm: "lab-lch"
+        },
+        {
+          // Segment 3: moderate → warm
+          type: "algorithmic",
+          fromColor: [108, 93, 154, 255], // #6c5d9a purple
+          toColor: [179, 88, 127, 255],   // #b3587f mauve
+          algorithm: "lab-lch"
+        },
+        {
+          // Segment 4: warm → very warm
+          type: "algorithmic",
+          fromColor: [179, 88, 127, 255], // #b3587f mauve
+          toColor: [224, 130, 20, 255],   // #e08214 light orange
+          algorithm: "lab-lch"
+        },
+        {
+          // Segment 5: very warm → hottest
+          type: "algorithmic",
+          fromColor: [224, 130, 20, 255], // #e08214 light orange
+          toColor: [235, 98, 54, 255],    // #eb6236 orange‑red
+          algorithm: "lab-lch"
+        }
+      ]
+    }
+  };
+
+  // Chlorophyll‑a concentrations typically range from near zero in open ocean
+  // waters to tens of milligrams per cubic metre in highly productive coastal
+  // areas.  To emulate NOAA’s chlorophyll map, we define a palette that
+  // progresses from deep blue (very low concentration) through turquoise and
+  // greens to a yellow‑green for the highest values.  Each segment is
+  // intentionally kept broad to avoid banding and to promote perceptual
+  // uniformity.
+  const chlRenderer = {
+    type: "raster-stretch",
+    // Use a standard deviation stretch for chlorophyll.  This focuses the
+    // contrast on values within ±2 standard deviations of the mean, which
+    // better reveals variation among low concentrations that otherwise appear
+    // uniformly blue when using a min–max stretch.  The number of standard
+    // deviations is derived empirically; adjust as needed if the data range
+    // changes significantly.
+    stretchType: "standard-deviation",
+    numberOfStandardDeviations: 2,
+    colorRamp: {
+      type: "multipart",
+      colorRamps: [
+        {
+          // Segment 1: oligotrophic waters (very low chlorophyll)
+          type: "algorithmic",
+          fromColor: [9, 46, 92, 255],    // #092e5c dark navy blue
+          toColor: [0, 96, 159, 255],     // #00609f medium blue
+          algorithm: "lab-lch"
+        },
+        {
+          // Segment 2: low concentrations
+          type: "algorithmic",
+          fromColor: [0, 96, 159, 255],   // #00609f medium blue
+          toColor: [54, 152, 196, 255],   // #3698c4 turquoise
+          algorithm: "lab-lch"
+        },
+        {
+          // Segment 3: moderate concentrations
+          type: "algorithmic",
+          fromColor: [54, 152, 196, 255], // #3698c4 turquoise
+          toColor: [81, 200, 98, 255],    // #51c862 medium green
+          algorithm: "lab-lch"
+        },
+        {
+          // Segment 4: high concentrations
+          type: "algorithmic",
+          fromColor: [81, 200, 98, 255],  // #51c862 medium green
+          toColor: [183, 231, 99, 255],   // #b7e763 yellow‑green
+          algorithm: "lab-lch"
+        }
+      ]
+    }
+  };
+
+  // Apply the custom renderers to the imagery layers.  This must be done after
+  // layer creation and before they are added to the map.  If the service
+  // supports server‑side dynamic rendering, these client‑side renderers will
+  // override the default rainbow palette.
+  sstMonthly.renderer = sstRenderer;
+  sstAnnual.renderer  = sstRenderer;
+  chlMonthly.renderer = chlRenderer;
+
   const rasters = [sstMonthly, sstAnnual, chlMonthly];
   map.addMany(rasters);
   map.add(mhwLayer);
@@ -150,7 +270,9 @@ require([
 
   const impactLayer = new FeatureLayer({
     portalItem: { id: items.impactMapId || "5a820135359e42ac9fe107e3043e5a33" },
-    title: "Impact Map",
+    // Renamed from "Impact Map" to "Ecosystem impacts" to better reflect
+    // the contents of the layer.  This title will appear in the legend.
+    title: "Ecosystem impacts",
     visible: false,
     outFields: ["*"],
     popupTemplate: { title: "{Impact_Type}", content: "{popup}" }
@@ -358,6 +480,7 @@ require([
       showVectorPanel: false,
       showPressuresPanel: false,
       showJurisPanel: false,
+      showFishPanel: false,
       showTimeSlider: false,
       activateLayers: () => {
         rasters.forEach(l => l.visible = false);
@@ -376,6 +499,7 @@ require([
       showVectorPanel: true,
       showPressuresPanel: false,
       showJurisPanel: false,
+      showFishPanel: false,
       showTimeSlider: true,
       activateLayers: () => {
         const checked = document.querySelector('input[name="rasterChoice"]:checked');
@@ -400,6 +524,7 @@ require([
       showVectorPanel: false,
       showPressuresPanel: true,
       showJurisPanel: false,
+      showFishPanel: false,
       showTimeSlider: true,
       activateLayers: () => {
         rasters.forEach(l => l.visible = false);
@@ -425,6 +550,7 @@ require([
       showVectorPanel: false,
       showPressuresPanel: false,
       showJurisPanel: true,
+      showFishPanel: false,
       showTimeSlider: false,
       activateLayers: () => {
         rasters.forEach(l => l.visible = false);
@@ -447,6 +573,7 @@ require([
       showVectorPanel: false,
       showPressuresPanel: false,
       showJurisPanel: false,
+      showFishPanel: true,
       showTimeSlider: false,
       activateLayers: () => {
         rasters.forEach(l => l.visible = false);
@@ -469,6 +596,8 @@ require([
   const vectorPanelEl    = document.getElementById('vectorPanel');
   const pressuresPanelEl = document.getElementById('pressuresPanel');
   const jurisPanelEl     = document.getElementById('jurisPanel');
+  // New panel for fish overlays (stock status and ecosystem impacts)
+  const fishPanelEl      = document.getElementById('fishPanel');
   const themeTitleEl     = document.getElementById('themeTitle');
   const themeContentEl   = document.getElementById('themeContent');
   const tabButtons       = document.querySelectorAll('.tab');
@@ -487,6 +616,8 @@ require([
       showPanel(vectorPanelEl,    theme.showVectorPanel);
       showPanel(pressuresPanelEl, theme.showPressuresPanel);
       showPanel(jurisPanelEl,     theme.showJurisPanel);
+      // Display the fish overlays panel when appropriate
+      showPanel(fishPanelEl,      theme.showFishPanel);
       timeSlider.visible = theme.showTimeSlider;
       theme.activateLayers();
     });
@@ -507,6 +638,7 @@ require([
     showPanel(vectorPanelEl,    theme.showVectorPanel);
     showPanel(pressuresPanelEl, theme.showPressuresPanel);
     showPanel(jurisPanelEl,     theme.showJurisPanel);
+    showPanel(fishPanelEl,      theme.showFishPanel);
     timeSlider.visible = theme.showTimeSlider;
     theme.activateLayers();
 
