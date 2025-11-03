@@ -12,6 +12,7 @@ require([
   "esri/Basemap",
   "esri/layers/TileLayer",
   "esri/layers/VectorTileLayer"
+  , "esri/renderers/RasterColormapRenderer"
 ], function (
   esriConfig,
   Map,
@@ -24,7 +25,8 @@ require([
   TimeSlider,
   Basemap,
   TileLayer,
-  VectorTileLayer
+  VectorTileLayer,
+  RasterColormapRenderer
 ) {
   // ---- Runtime configuration ----
   const CFG = window.BECI_CONFIG || {};
@@ -78,24 +80,49 @@ require([
   if (legendDiv) legend = new Legend({ view, container: legendDiv });
 
   // ---- Time-aware rasters ----
+  // Monthly sea surface temperature (default visible)
   const sstMonthly = new ImageryTileLayer({
     portalItem: { id: items.sstMonthlyId || "8c551d176e0e48ddaec623545f4899f2" },
     title: "SST (Monthly)",
     visible: true
   });
+  // Annual sea surface temperature (hidden by default)
   const sstAnnual = new ImageryTileLayer({
     portalItem: { id: items.sstAnnualId || "91743c7b6f354494acc8c822e2a40df6" },
     title: "SST (Annual)",
     visible: false
   });
+  // Marine heat wave mask (monthly)
   const mhwLayer = new ImageryTileLayer({
     portalItem: { id: items.mhwMonthlyId || "3eb9dc4649204d0498760ead24c58afc" },
     title: "Marine Heat Wave (Monthly)",
     visible: false
   });
+
+  // Define a colormap renderer for the marine heat wave mask.  Pixels with
+  // value 0 (no heatwave) are fully transparent; value 1 (heatwave) are drawn
+  // with a semi‑transparent orange.  This makes heatwave extent easy to see
+  // without obscuring the base map.  See the RasterColormapRenderer docs for
+  // more details.
+  const mhwRenderer = new RasterColormapRenderer({
+    colormapInfos: [
+      { value: 0, color: [0, 0, 0, 0], label: "No heatwave" },
+      { value: 1, color: [253, 126, 20, 0.6], label: "Heatwave" }
+    ]
+  });
+  mhwLayer.renderer = mhwRenderer;
+  // Monthly chlorophyll-a concentration
   const chlMonthly = new ImageryTileLayer({
     portalItem: { id: items.chlMonthlyId || "f08e5246b0814aabb1df13dae5ec862b" },
     title: "Chlorophyll (Monthly)",
+    visible: false
+  });
+  // Annual chlorophyll-a concentration
+  // NOTE: The annual chlorophyll layer was missing in the original code.  We add it here,
+  // using the same fallback portalItem ID as the monthly chlorophyll until a distinct ID is provided.
+  const chlAnnual = new ImageryTileLayer({
+    portalItem: { id: items.chlAnnualId || "f08e5246b0814aabb1df13dae5ec862b" },
+    title: "Chlorophyll (Annual)",
     visible: false
   });
 
@@ -211,15 +238,18 @@ require([
     }
   };
 
-  // Apply the custom renderers to the imagery layers.  This must be done after
+  // Apply custom renderers to the imagery layers.  This must be done after
   // layer creation and before they are added to the map.  If the service
   // supports server‑side dynamic rendering, these client‑side renderers will
   // override the default rainbow palette.
   sstMonthly.renderer = sstRenderer;
   sstAnnual.renderer  = sstRenderer;
   chlMonthly.renderer = chlRenderer;
+  chlAnnual.renderer  = chlRenderer;
 
-  const rasters = [sstMonthly, sstAnnual, chlMonthly];
+  // Collect raster layers in an array for easy toggling.  Include the newly added
+  // annual chlorophyll layer so it can participate in exclusive visibility logic.
+  const rasters = [sstMonthly, sstAnnual, chlMonthly, chlAnnual];
   map.addMany(rasters);
   map.add(mhwLayer);
 
@@ -234,16 +264,30 @@ require([
     map.add(lmeLayer);
   }
 
-  // ---- Species/admin overlays ----
+  // ---- Species and LME overlays ----
+  // The species collection contains multiple sublayers: the last (layerId 3) represents
+  // the administrative boundary for Large Marine Ecosystems (LMEs).  We rename this
+  // layer to "LMEs" and assign a simple popup so that clicking on a boundary only
+  // displays the LME name.  This layer remains visible across all tabs to provide
+  // geographic context.  Species distribution shifts are represented by line and
+  // point sublayers.  Visibility for these layers is toggled per tab below.
   const speciesItemId = items.speciesCollectionId || "f97d35b2f30c4c1fb29df6c7df9030d5";
-  const adminAreas = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 3, title: "Admin areas", opacity: 0.25, visible: true });
-  const spLines    = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 2, title: "Species shift (lines)", visible: true });
-  const spStart    = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 1, title: "Species shift (start)", visible: true });
-  const spEnd      = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 0, title: "Species shift (end)", visible: true });
-  map.addMany([adminAreas, spLines, spStart, spEnd]);
+  const lmeShell = new FeatureLayer({
+    portalItem: { id: speciesItemId },
+    layerId: 3,
+    title: "LMEs",
+    opacity: 0.25,
+    visible: true,
+    outFields: ["*"],
+    popupTemplate: { title: "{LME_Name}" }
+  });
+  const spLines = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 2, title: "Species shift (lines)", visible: true });
+  const spStart = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 1, title: "Species shift (start)", visible: true });
+  const spEnd   = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 0, title: "Species shift (end)", visible: true });
+  map.addMany([lmeShell, spLines, spStart, spEnd]);
 
   // ---- Fish impact layers (IDs now read from config) ----
-  // Helpers (unchanged from previous step) for renderers
+  // Helpers for renderers
   function parseHexColor(hex, alpha = 1) {
     if (!hex) return [128, 128, 128, alpha];
     const h = hex.trim().replace('#', '');
@@ -267,6 +311,209 @@ require([
     [233, 196, 106, 1], [90, 122, 166, 1], [188, 80, 144, 1], [124, 173, 67, 1],
   ];
   function pickImpactColor(index) { return IMPACT_PALETTE[index % IMPACT_PALETTE.length]; }
+
+  // ---------------------------------------------------------------------------
+  // LME health polygons
+  //
+  // Add a dedicated layer for LME health status polygons.  The layer ID is
+  // provided in the config (items.lmeHealthId).  The renderer is based on the
+  // "Overall_Status" field with the fixed colours defined in the North Pacific
+  // implementation package.  Popups expose the fields requested in the PDF.
+  //
+  // Popup template for the LME health polygons.
+  //
+  // The service backing this layer prefixes the health attributes with
+  // `lme_health_csv_` (for example `lme_health_csv_Overall_Status`).  The
+  // original implementation attempted to reference un‑prefixed field names
+  // which don’t exist on the layer, causing the renderer and popups to fail
+  // silently.  To fix this we explicitly reference the prefixed field names.
+  // See the item’s JSON for the authoritative field names:
+  // https://www.arcgis.com/sharing/rest/content/items/3ca4c0dfea2c4212b15c4dba53eb4189/data?f=pjson
+  const lmeHealthPopup = {
+    title: "{lme_health_csv_LME_Name}",
+    content: [
+      {
+        type: "fields",
+        fieldInfos: [
+          {
+            fieldName: "lme_health_csv_LME_Name",
+            label: "Large Marine Ecosystem"
+          },
+          {
+            fieldName: "lme_health_csv_Overall_Status",
+            label: "Health Status"
+          },
+          {
+            fieldName: "lme_health_csv_Health_Score",
+            label: "Health Score (0–100)"
+          },
+          {
+            fieldName: "lme_health_csv_Primary_Concern",
+            label: "Primary Concern"
+          },
+          {
+            fieldName: "lme_health_csv_Notes",
+            label: "Additional Information"
+          }
+        ]
+      }
+    ]
+  };
+  const lmeHealthLayer = new FeatureLayer({
+    portalItem: { id: items.lmeHealthId || "3ca4c0dfea2c4212b15c4dba53eb4189" },
+    layerId: 0,
+    title: "LME health",
+    // Start hidden; the appropriate tab logic will toggle visibility.
+    visible: false,
+    // Explicitly list the fields used in the popup and renderer.  Referencing
+    // only the required fields reduces payload size and avoids exposing
+    // implementation details.
+    outFields: [
+      "lme_health_csv_LME_Name",
+      "lme_health_csv_Overall_Status",
+      "lme_health_csv_Health_Score",
+      "lme_health_csv_Primary_Concern",
+      "lme_health_csv_Notes"
+    ],
+    popupTemplate: lmeHealthPopup
+  });
+  map.add(lmeHealthLayer);
+
+  function applyLmeHealthRenderer() {
+    // Define the LME health renderer using the prefixed status field.  Without
+    // this the renderer falls back to the default symbol and polygons draw
+    // invisibly.  The colours follow the implementation package: red for
+    // critical, orange for warning, yellow for caution, green for good.  Any
+    // unknown or missing statuses fall back to a light grey.
+    lmeHealthLayer.renderer = {
+      type: "unique-value",
+      field: "lme_health_csv_Overall_Status",
+      defaultSymbol: {
+        type: "simple-fill",
+        color: [200, 200, 200, 0.3],
+        outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+      },
+      defaultLabel: "Unknown",
+      uniqueValueInfos: [
+        {
+          value: "Critical",
+          label: "Critical",
+          symbol: {
+            type: "simple-fill",
+            color: [220, 53, 69, 0.7],
+            outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+          }
+        },
+        {
+          value: "Warning",
+          label: "Warning",
+          symbol: {
+            type: "simple-fill",
+            color: [253, 126, 20, 0.7],
+            outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+          }
+        },
+        {
+          value: "Caution",
+          label: "Caution",
+          symbol: {
+            type: "simple-fill",
+            color: [255, 193, 7, 0.7],
+            outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+          }
+        },
+        {
+          value: "Good",
+          label: "Good",
+          symbol: {
+            type: "simple-fill",
+            color: [40, 167, 69, 0.7],
+            outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+          }
+        }
+      ]
+    };
+  }
+  applyLmeHealthRenderer();
+
+  // ---------------------------------------------------------------------------
+  // Species shift renderer
+  //
+  // Classify species distribution shift lines into categories (Groundfish,
+  // Pelagic, Salmon and General) based on keywords in the Species field.  Each
+  // category is symbolised with the colours defined in the implementation
+  // package.  If the Species field is absent or does not match, the line is
+  // drawn with a default black colour.  Endpoints and start points retain
+  // their default symbolisation but inherit visibility toggles from the UI.
+  function applySpeciesRenderer() {
+    const categories = [
+      {
+        value: "Groundfish",
+        label: "Groundfish",
+        symbol: {
+          type: "simple-line",
+          color: [0, 102, 204, 0.7],
+          width: 2.5
+        }
+      },
+      {
+        value: "Pelagic",
+        label: "Pelagic",
+        symbol: {
+          type: "simple-line",
+          color: [255, 102, 0, 0.7],
+          width: 2.5
+        }
+      },
+      {
+        value: "Salmon",
+        label: "Salmon",
+        symbol: {
+          type: "simple-line",
+          color: [204, 0, 0, 0.7],
+          width: 2.5
+        }
+      },
+      {
+        value: "General",
+        label: "General",
+        symbol: {
+          type: "simple-line",
+          color: [0, 0, 0, 0.7],
+          width: 2.5
+        }
+      }
+    ];
+    // The species distribution shift lines are classified using the
+    // `SpeciesGroup` attribute rather than a custom value expression.  The
+    // original implementation attempted to parse species names from a
+    // nonexistent `Species` field, which resulted in all lines being drawn
+    // with the default symbol.  The `SpeciesGroup` field stores the category
+    // directly (e.g. "Groundfish", "Pelagic", "Salmon", "General pattern"), so
+    // a simple unique‑value renderer suffices.  If an unknown value is
+    // encountered it falls back to the General colour (black).
+    spLines.renderer = {
+      type: "unique-value",
+      // Use a value expression to perform a case‑insensitive classification of the
+      // SpeciesGroup string.  This ensures that compound values such as
+      // "General pattern" or "Pelagic (Saury/Sardine)" map into the correct
+      // categories.  Upper() normalises the text and IndexOf() searches for
+      // keywords.  If no keyword matches, the fallback category is "General".
+      valueExpression: `var sg = Upper(Trim($feature.SpeciesGroup));
+        var gf  = IndexOf(sg, 'GROUNDFISH') >= 0;
+        var pel = IndexOf(sg, 'PELAGIC') >= 0;
+        var sal = IndexOf(sg, 'SALMON') >= 0;
+        return IIf(gf, 'Groundfish', IIf(pel, 'Pelagic', IIf(sal, 'Salmon', 'General')));`,
+      uniqueValueInfos: categories,
+      defaultSymbol: {
+        type: "simple-line",
+        color: [0, 0, 0, 0.7],
+        width: 2.5
+      },
+      defaultLabel: "General"
+    };
+  }
+  applySpeciesRenderer();
 
   const impactLayer = new FeatureLayer({
     portalItem: { id: items.impactMapId || "5a820135359e42ac9fe107e3043e5a33" },
@@ -400,7 +647,7 @@ require([
         return;
       }
       timeSlider.fullTimeExtent = ti.fullTimeExtent;
-      const guessedInterval = (layer === sstAnnual)
+      const guessedInterval = (layer === sstAnnual || layer === chlAnnual)
         ? { interval: { unit: "years", value: 1 } }
         : { interval: { unit: "months", value: 1 } };
       const serviceInterval = ti.interval;
@@ -428,17 +675,20 @@ require([
         case "sstMonthly": setOnlyVisible(sstMonthly); break;
         case "sstAnnual":  setOnlyVisible(sstAnnual);  break;
         case "chlMonthly": setOnlyVisible(chlMonthly); break;
+        case "chlAnnual":  setOnlyVisible(chlAnnual);  break;
         default: break;
       }
     });
   });
 
   // ---- Overlay checkboxes ----
-  const chkAdmin = document.getElementById("chkAdmin");
+  const chkLMEs = document.getElementById("chkLMEs");
   const chkLines = document.getElementById("chkLines");
   const chkStart = document.getElementById("chkStart");
   const chkEnd   = document.getElementById("chkEnd");
-  if (chkAdmin) chkAdmin.addEventListener("change", () => { adminAreas.visible = chkAdmin.checked; });
+  // Toggle visibility of LME boundaries (shell) via the checkbox.  The shell
+  // remains visible across all tabs unless explicitly unchecked.
+  if (chkLMEs) chkLMEs.addEventListener("change", () => { lmeShell.visible = chkLMEs.checked; });
   if (chkLines) chkLines.addEventListener("change", () => { spLines.visible    = chkLines.checked; });
   if (chkStart) chkStart.addEventListener("change", () => { spStart.visible    = chkStart.checked; });
   if (chkEnd)   chkEnd.addEventListener("change", () => { spEnd.visible        = chkEnd.checked; });
@@ -485,10 +735,19 @@ require([
       activateLayers: () => {
         rasters.forEach(l => l.visible = false);
         if (mhwLayer) mhwLayer.visible = false;
-        if (lmeLayer) lmeLayer.visible = false;
+        // Always show the LME shell unless the user has toggled it off.  Enable
+        // popups so users can see the LME name on click.
+        lmeShell.visible = chkLMEs ? chkLMEs.checked : true;
+        lmeShell.popupEnabled = true;
+        // Ensure health polygons are hidden on the intro tab
+        if (lmeHealthLayer) lmeHealthLayer.visible = false;
         bindSliderTo(null);
         impactLayer.visible = false;
         stockLayer.visible = false;
+        // Hide species shift overlays on the intro tab
+        spLines.visible = false;
+        spStart.visible = false;
+        spEnd.visible = false;
       }
     },
     env: {
@@ -507,11 +766,20 @@ require([
           if (checked.value === "sstMonthly") setOnlyVisible(sstMonthly);
           if (checked.value === "sstAnnual")  setOnlyVisible(sstAnnual);
           if (checked.value === "chlMonthly") setOnlyVisible(chlMonthly);
+          if (checked.value === "chlAnnual")  setOnlyVisible(chlAnnual);
         } else {
           setOnlyVisible(sstMonthly);
         }
         if (mhwLayer) mhwLayer.visible = false;
-        if (lmeLayer) lmeLayer.visible = false;
+        // Keep the LME shell visible depending on the toggle and allow popups
+        lmeShell.visible = chkLMEs ? chkLMEs.checked : true;
+        lmeShell.popupEnabled = true;
+        // Hide LME health polygons on the baseline tab
+        if (lmeHealthLayer) lmeHealthLayer.visible = false;
+        // Hide species shift overlays on baseline tab
+        spLines.visible = false;
+        spStart.visible = false;
+        spEnd.visible = false;
         impactLayer.visible = false;
         stockLayer.visible = false;
       }
@@ -527,19 +795,32 @@ require([
       showFishPanel: false,
       showTimeSlider: true,
       activateLayers: () => {
+        // Hide all rasters and clear the TimeSlider binding
         rasters.forEach(l => l.visible = false);
         bindSliderTo(null);
+        // Heatwave mask is optional and controlled by its checkbox
         if (mhwLayer) {
           mhwLayer.visible = chkMHW ? chkMHW.checked : true;
           bindSliderTo(mhwLayer);
         }
-        if (lmeLayer) lmeLayer.visible = false;
-        adminAreas.visible = false;
-        spLines.visible = false;
-        spStart.visible = false;
-        spEnd.visible = false;
+        // Always show the LME boundaries (shell) if toggled on.  Disable
+        // popups for the shell on this tab so that clicking on the map
+        // displays details only from the health polygons or other layers.
+        lmeShell.visible = chkLMEs ? chkLMEs.checked : true;
+        lmeShell.popupEnabled = false;
+        // Display the LME health polygons for environmental pressure context.  Enable
+        // popups on this layer so users can access detailed health information.
+        if (lmeHealthLayer) {
+          lmeHealthLayer.visible = true;
+          lmeHealthLayer.popupEnabled = true;
+        }
+        // Show species shift overlays based on user toggles (default on)
+        spLines.visible = chkLines ? chkLines.checked : true;
+        spStart.visible = chkStart ? chkStart.checked : true;
+        spEnd.visible   = chkEnd   ? chkEnd.checked   : true;
+        // Fish impact layers are hidden on this tab
         impactLayer.visible = false;
-        stockLayer.visible = false;
+        stockLayer.visible  = false;
       }
     },
     jurisdictions: {
@@ -556,13 +837,18 @@ require([
         rasters.forEach(l => l.visible = false);
         if (mhwLayer) mhwLayer.visible = false;
         bindSliderTo(null);
-        if (lmeLayer) lmeLayer.visible = chkLME ? chkLME.checked : true;
-        adminAreas.visible = false;
+        // Show the LME boundaries (shell) if toggled on and allow popups
+        lmeShell.visible = chkLMEs ? chkLMEs.checked : true;
+        lmeShell.popupEnabled = true;
+        // Hide the LME health polygons on the jurisdictions tab
+        if (lmeHealthLayer) lmeHealthLayer.visible = false;
+        // Hide species shift overlays
         spLines.visible = false;
         spStart.visible = false;
         spEnd.visible = false;
+        // Hide fish impact layers
         impactLayer.visible = false;
-        stockLayer.visible = false;
+        stockLayer.visible  = false;
       }
     },
     fish: {
@@ -578,12 +864,16 @@ require([
       activateLayers: () => {
         rasters.forEach(l => l.visible = false);
         if (mhwLayer) mhwLayer.visible = false;
-        if (lmeLayer) lmeLayer.visible = false;
+        // Always show the LME boundaries (shell) if toggled on and allow popups
+        lmeShell.visible = chkLMEs ? chkLMEs.checked : true;
+        lmeShell.popupEnabled = true;
+        // Hide the LME health polygons on the fish tab
+        if (lmeHealthLayer) lmeHealthLayer.visible = false;
         bindSliderTo(null);
-        adminAreas.visible = false;
+        // Hide species shift overlays on the fish tab
         spLines.visible = false;
         spStart.visible = false;
-        spEnd.visible = false;
+        spEnd.visible   = false;
 
         // Ensure fish layers reflect current (or default) checkbox state
         syncFishToggles();

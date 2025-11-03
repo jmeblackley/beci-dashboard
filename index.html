@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>BECI Interactive Map (POC)</title>
+  <title>BECI Interactive Map (DRAFT)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- ArcGIS JS API -->
@@ -34,7 +34,7 @@
 </head>
 <body>
   <header class="topbar">
-    <strong>BECI Interactive Map (POC)</strong>
+    <strong>BECI Interactive Map (Draft)</strong>
     <div class="tablist" id="tablist">
       <button class="tab is-active" data-theme="intro">Introduction</button>
       <button class="tab" data-theme="env">Environmental conditions</button>
@@ -66,6 +66,9 @@
             <label><input type="radio" name="rasterChoice" value="sstMonthly" checked> SST (Monthly)</label>
             <label><input type="radio" name="rasterChoice" value="sstAnnual"> SST (Annual)</label>
             <label><input type="radio" name="rasterChoice" value="chlMonthly"> Chlorophyll (Monthly)</label>
+            <!-- Added option for annual chlorophyll.  Using a separate value allows the app logic
+                 to toggle this layer independently of the monthly chlorophyll. -->
+            <label><input type="radio" name="rasterChoice" value="chlAnnual"> Chlorophyll (Annual)</label>
           </div>
           <p class="muted" style="margin:.5rem 0 0">Only one is shown at a time to avoid ambiguous time states.</p>
         </fieldset>
@@ -75,7 +78,10 @@
         <fieldset>
           <legend>Species overlays</legend>
           <div class="row">
-            <label><input type="checkbox" id="chkAdmin" checked> Admin areas</label>
+            <!-- The LMEs layer is always visible across all tabs.  The checkbox below allows
+                 the user to toggle it on or off without affecting the underlying health
+                 polygons.  Renamed from "Admin areas" for clarity. -->
+            <label><input type="checkbox" id="chkLMEs" checked> LMEs</label>
             <label><input type="checkbox" id="chkLines" checked> Species shift (lines)</label>
             <label><input type="checkbox" id="chkStart" checked> Species shift (start)</label>
             <label><input type="checkbox" id="chkEnd" checked> Species shift (end)</label>
