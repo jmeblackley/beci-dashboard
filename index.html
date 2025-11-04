@@ -98,16 +98,50 @@
           </div>
         </fieldset>
       </div>
-
       <!-- Jurisdictions panel: toggles for governance overlays -->
       <div id="jurisPanel" class="section" style="display:none">
         <fieldset>
-          <legend>Jurisdiction overlays</legend>
+          <legend>Management jurisdictions</legend>
           <div class="row">
-            <label><input type="checkbox" id="chkLME" checked> LME boundaries</label>
+            <strong>EEZ Boundaries</strong>
+          </div>
+          <div class="row" style="margin-bottom:.25rem">
+            <label><input type="checkbox" id="chkEEZ" checked> EEZ (All nations)</label>
+          </div>
+          
+          <div class="row">
+            <strong>Regional Fisheries Management Organizations</strong>
+          </div>
+
+          <div class="row" style="flex-direction:column; gap:.5rem">
+            <label for="rfmoSelect">Show RFMOs (multi-select):</label>
+            <select id="rfmoSelect" multiple size="6" style="width:100%">
+              <option value="NPFC">North Pacific Fisheries Commission (NPFC)</option>
+              <option value="NPAFC">North Pacific Anadromous Fish Commission (NPAFC)</option>
+              <option value="PSC">Pacific Salmon Commission (PSC)</option>
+              <option value="IPHC">International Pacific Halibut Commission (IPHC)</option>
+              <option value="WCPFC">Western &amp; Central Pacific Fisheries Commission (WCPFC)</option>
+              <option value="IATTC">Inter-American Tropical Tuna Commission (IATTC)</option>
+            </select>
+
+            <div style="display:flex; gap:.5rem">
+              <button type="button" id="rfmoAll"  class="btn">All</button>
+              <button type="button" id="rfmoNone" class="btn">None</button>
+            </div>
+            <small>Tip: use Shift/Ctrl (Cmd on Mac) to pick several.</small>
+          </div>
+
+
+          <!-- Optional placeholder for dashed special zones -->
+          <div class="row" style="margin-top:.5rem">
+            <strong>Special Management Zones</strong>
+          </div>
+          <div class="row">
+            <label><input type="checkbox" id="chkSpecial" disabled> (coming soon)</label>
           </div>
         </fieldset>
       </div>
+
 
       <!-- Fish panel: toggles for fish stock and ecosystem impact overlays -->
       <div id="fishPanel" class="section" style="display:none">
