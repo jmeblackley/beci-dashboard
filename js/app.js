@@ -787,9 +787,44 @@ require([
   // if the element is omitted from the page.
   const speciesSelect = document.getElementById("rfmoSpeciesSelect");
 
+  // ---- Member nations filter control ----
+  // Grab the member nations multi-select from the DOM.  This will be populated
+  // dynamically when the RFMO layer is queried.
+  const memberSelect = document.getElementById("rfmoMemberSelect");
+
+  // Map of member nation / party name -> set of RFMO codes that include it.
+  const memberToRfmoMap = {};
+
   // Map of species name -> set of RFMO codes that manage it.  This is populated
   // once when the RFMO layer is queried and used to update the RFMO list.
   const speciesToRfmoMap = {};
+
+  /**
+   * Helper to split a Member_Nations string into individual member names.  The field
+   * uses commas to separate names, but some names contain commas within parentheses
+   * (e.g. "Chinese Taipei (Taiwan, as separate entity)").  This function splits
+   * on commas that are not inside parentheses.
+   */
+  function splitMembers(str) {
+    const result = [];
+    let token = '';
+    let depth = 0;
+    for (let i = 0; i < str.length; i++) {
+      const ch = str[i];
+      if (ch === '(') depth++;
+      else if (ch === ')') depth--;
+      if (ch === ',' && depth === 0) {
+        const trimmed = token.trim();
+        if (trimmed) result.push(trimmed);
+        token = '';
+      } else {
+        token += ch;
+      }
+    }
+    const finalTrimmed = token.trim();
+    if (finalTrimmed) result.push(finalTrimmed);
+    return result;
+  }
 
   /**
    * Apply the species filter to all RFMO layers.  This function builds a
@@ -797,17 +832,28 @@ require([
    * filter and adds an OR-ed set of LIKE clauses for each selected species.
    */
   function applySpeciesFilter() {
-    if (!speciesSelect) return;
-    const selected = Array.from(speciesSelect.selectedOptions).map(o => o.value);
+    // Build filter expressions based on selected species and member nations. If neither
+    // select element exists, there is nothing to filter.
+    const selectedSpecies = speciesSelect ? Array.from(speciesSelect.selectedOptions).map(o => o.value) : [];
+    const selectedMembers = memberSelect ? Array.from(memberSelect.selectedOptions).map(o => o.value) : [];
     Object.entries(rfmoLayers).forEach(([code, lyr]) => {
       if (!lyr) return;
       let expr = `RFMO_Acronym='${code}'`;
-      if (selected.length > 0) {
-        // Build OR clauses for each selected species, matching either SpeciesManaged or Species_Managed
-        const parts = selected.map(sp =>
-          `(Upper(SpeciesManaged) LIKE '%${sp.toUpperCase()}%' OR Upper(Species_Managed) LIKE '%${sp.toUpperCase()}%')`
-        );
-        expr += ' AND (' + parts.join(' OR ') + ')';
+      // Append species filter if any species are selected
+      if (selectedSpecies && selectedSpecies.length > 0) {
+        const speciesParts = selectedSpecies.map(sp => {
+          const up = sp.toUpperCase();
+          return `(Upper(SpeciesManaged) LIKE '%${up}%' OR Upper(Species_Managed) LIKE '%${up}%')`;
+        });
+        expr += ' AND (' + speciesParts.join(' OR ') + ')';
+      }
+      // Append member filter if any member nations are selected
+      if (selectedMembers && selectedMembers.length > 0) {
+        const memberParts = selectedMembers.map(m => {
+          const up = m.toUpperCase();
+          return `Upper(Member_Nations) LIKE '%${up}%'`;
+        });
+        expr += ' AND (' + memberParts.join(' OR ') + ')';
       }
       lyr.definitionExpression = expr;
     });
@@ -850,19 +896,40 @@ require([
       applyRfmoSelectionFromUI();
       return;
     }
-    const selected = Array.from(speciesSelect.selectedOptions).map(o => o.value);
-    let allowedCodes = new Set();
-    if (selected.length === 0) {
-      // No species selected: show all RFMOs
-      allowedCodes = new Set(Object.keys(rfmoFullNames));
+    // Build allowed codes based on selected species and member nations.
+    const selectedSpecies = speciesSelect ? Array.from(speciesSelect.selectedOptions).map(o => o.value) : [];
+    const selectedMembers = memberSelect ? Array.from(memberSelect.selectedOptions).map(o => o.value) : [];
+    // Determine species-allowed codes (all codes if none selected)
+    let speciesAllowed;
+    if (!selectedSpecies || selectedSpecies.length === 0) {
+      speciesAllowed = new Set(Object.keys(rfmoFullNames));
     } else {
-      selected.forEach(sp => {
+      speciesAllowed = new Set();
+      selectedSpecies.forEach(sp => {
         const codes = speciesToRfmoMap[sp];
         if (codes) {
-          codes.forEach(c => allowedCodes.add(c));
+          codes.forEach(c => speciesAllowed.add(c));
         }
       });
     }
+    // Determine member-allowed codes (all codes if none selected)
+    let memberAllowed;
+    if (!selectedMembers || selectedMembers.length === 0) {
+      memberAllowed = new Set(Object.keys(rfmoFullNames));
+    } else {
+      memberAllowed = new Set();
+      selectedMembers.forEach(m => {
+        const codes = memberToRfmoMap[m];
+        if (codes) {
+          codes.forEach(c => memberAllowed.add(c));
+        }
+      });
+    }
+    // Intersection of speciesAllowed and memberAllowed
+    const allowedCodes = new Set();
+    speciesAllowed.forEach((code) => {
+      if (memberAllowed.has(code)) allowedCodes.add(code);
+    });
     // Preserve currently selected RFMOs, but only if they are still allowed
     const prevSelected = new Set(Array.from(rfmoSelect.selectedOptions).map(o => o.value));
     rfmoSelect.innerHTML = '';
@@ -871,7 +938,9 @@ require([
         const opt = document.createElement('option');
         opt.value = code;
         opt.textContent = rfmoFullNames[code];
-        if (prevSelected.has(code) || selected.length === 0) opt.selected = true;
+        // Select option if it was previously selected, or if no species and no members are selected
+        const noneSelected = (!selectedSpecies || selectedSpecies.length === 0) && (!selectedMembers || selectedMembers.length === 0);
+        if (prevSelected.has(code) || noneSelected) opt.selected = true;
         rfmoSelect.appendChild(opt);
       }
     });
@@ -950,10 +1019,11 @@ require([
   if (rfmoAll && speciesSelect) {
     rfmoAll.queryFeatures({
       where: "1=1",
-      outFields: ["SpeciesManaged", "Species_Managed", "RFMO_Acronym"],
+      outFields: ["SpeciesManaged", "Species_Managed", "Member_Nations", "RFMO_Acronym"],
       returnGeometry: false
     }).then((fs) => {
       const speciesSet = new Set();
+      const memberSet = new Set();
       fs.features.forEach((feature) => {
         const code = feature.attributes["RFMO_Acronym"];
         ["SpeciesManaged", "Species_Managed"].forEach((field) => {
@@ -969,6 +1039,18 @@ require([
             });
           }
         });
+        // Parse member nations; use only Member_Nations field as requested
+        const membersStr = feature.attributes["Member_Nations"];
+        if (membersStr) {
+          const names = splitMembers(membersStr);
+          names.forEach((name) => {
+            const trimmed = name.trim();
+            if (!trimmed) return;
+            memberSet.add(trimmed);
+            if (!memberToRfmoMap[trimmed]) memberToRfmoMap[trimmed] = new Set();
+            memberToRfmoMap[trimmed].add(code);
+          });
+        }
       });
       const sorted = Array.from(speciesSet).sort();
       sorted.forEach((sp) => {
@@ -977,11 +1059,27 @@ require([
         opt.textContent = sp;
         speciesSelect.appendChild(opt);
       });
+      // Populate member nations select
+      if (memberSelect) {
+        const memSorted = Array.from(memberSet).sort();
+        memSorted.forEach((m) => {
+          const opt = document.createElement("option");
+          opt.value = m;
+          opt.textContent = m;
+          memberSelect.appendChild(opt);
+        });
+        // Select all by default
+        Array.from(memberSelect.options).forEach(o => { o.selected = true; });
+      }
       // Initially synchronise the RFMO list and filters with no species selected
       updateRfmoSelectBasedOnSpecies();
     });
     // When the user changes the species selection, update the RFMO list and filters
     speciesSelect.addEventListener("change", updateRfmoSelectBasedOnSpecies);
+    // When the user changes the member selection, update the RFMO list and filters
+    if (memberSelect) {
+      memberSelect.addEventListener("change", updateRfmoSelectBasedOnSpecies);
+    }
   }
 
   // Wire up the clear species button to reset selections
@@ -989,6 +1087,15 @@ require([
   if (speciesClearBtn && speciesSelect) {
     speciesClearBtn.addEventListener("click", () => {
       Array.from(speciesSelect.options).forEach(o => { o.selected = false; });
+      updateRfmoSelectBasedOnSpecies();
+    });
+  }
+
+  // Wire up the clear member nations button to reset selections
+  const memberClearBtn = document.getElementById("rfmoMemberClear");
+  if (memberClearBtn && memberSelect) {
+    memberClearBtn.addEventListener("click", () => {
+      Array.from(memberSelect.options).forEach(o => { o.selected = false; });
       updateRfmoSelectBasedOnSpecies();
     });
   }
