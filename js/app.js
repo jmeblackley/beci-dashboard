@@ -201,15 +201,214 @@ require([
     return { type: "simple-fill", color: [r,g,b,alpha], outline: { color: [r,g,b,0.85], width: 0.7 } };
   }
   function rfmoPopup() {
+    // Detailed RFMO popup template.  This returns an object that defines
+    // the popup title, a set of Arcade expressionInfos to normalize
+    // attribute names (e.g. full name, acronym, species, members, dates),
+    // and a list of content blocks.  Each content block is conditionally
+    // displayed based on the presence of data.  The title uses a coloured
+    // pill to display the RFMO acronym; the colour comes from
+    // DisplayColorHex/DisplayColor when available.
     return {
-      title: "{RFMO_Name} ({RFMO_Acronym})",
-      content: `
-        <div style="line-height:1.35">
-          <div><b>Species managed:</b> {SpeciesManaged}</div>
-          <div><b>Members:</b> {Members}</div>
-          <div><b>Convention area:</b> {ConventionArea}</div>
-          <div><b>Why critical:</b> {WhyCritical}</div>
-        </div>`
+      // Full name + coloured acronym pill (uses DisplayColorHex when present)
+      title:
+        `{expression/fullName} ` +
+        `<span style="font-size:12px;padding:2px 8px;border-radius:9999px;` +
+        `background:{expression/pillColor};color:#fff;margin-left:8px;">` +
+        `{expression/acronym}</span>`,
+
+      expressionInfos: [
+        // Coalesce helpers (handle alternate field names & blanks)
+        { name: "fullName",
+          expression:
+            // Prefer the full name field, then the short name, and fall back to RFB or a default label.
+            "When(!IsEmpty($feature.RFMO_Full_Name), $feature.RFMO_Full_Name," +
+            "     !IsEmpty($feature.RFMO_Name),      $feature.RFMO_Name," +
+            "     !IsEmpty($feature.RFB),            $feature.RFB," +
+            "     'Regional Fisheries Body')" },
+        { name: "acronym",
+          expression:
+            // Use the RFMO acronym if present; fall back to the RFB code or a generic placeholder.
+            "When(!IsEmpty($feature.RFMO_Acronym), $feature.RFMO_Acronym," +
+            "     !IsEmpty($feature.RFB),           Upper($feature.RFB)," +
+            "     'RFMO')" },
+
+        // Species & members: simple coalesced text fields.  Prefer SpeciesManaged/Members,
+        // then fallback to Species_Managed/Member_Nations.
+        { name: "speciesText",
+          expression:
+            // Coalesce species lists.  Only access a field if it exists to avoid
+            // runtime errors when a service schema differs.  Prefer SpeciesManaged,
+            // then Species_Managed.  Return null if neither field exists or both
+            // are empty.
+            "When(HasKey($feature,'SpeciesManaged') && !IsEmpty($feature['SpeciesManaged']), $feature['SpeciesManaged']," +
+            "     HasKey($feature,'Species_Managed') && !IsEmpty($feature['Species_Managed']), $feature['Species_Managed']," +
+            "     null)" },
+        { name: "membersText",
+          expression:
+            // Coalesce member lists.  Prefer Members, then Member_Nations.
+            "When(HasKey($feature,'Members') && !IsEmpty($feature['Members']), $feature['Members']," +
+            "     HasKey($feature,'Member_Nations') && !IsEmpty($feature['Member_Nations']), $feature['Member_Nations']," +
+            "     null)" },
+
+        // Convention area: coalesce different field names
+        { name: "convArea",
+          expression: "When(!IsEmpty($feature.ConventionArea), $feature.ConventionArea, !IsEmpty($feature.Convention_Area), $feature.Convention_Area, null)" },
+        // Why critical: fallback to null if empty
+        { name: "whyCritical",
+          expression: "DefaultValue($feature.WhyCritical, null)" },
+
+        // Established: display year if we can parse a date, else show raw.
+        { name: "establishedPretty",
+          expression:
+            "When(IsEmpty($feature.Established_Date), null," +
+            "     TypeOf($feature.Established_Date) == 'Date', Text(Year($feature.Established_Date))," +
+            "     IsNumeric($feature.Established_Date), $feature.Established_Date," +
+            "     $feature.Established_Date)" },
+
+        // Website: ensure protocol + clickable anchor.  Use Website_Link if present.
+        { name: "websiteHref",
+          expression:
+            "var u = $feature.Website_Link;" +
+            "IIf(IsEmpty(u), null, IIf(Left(Lower(u),4) == 'http', u, 'https://' + u))" },
+        { name: "websiteHtml",
+          expression:
+            "IIf(IsEmpty($expression.websiteHref), null," +
+            "'<a href=\"' + $expression.websiteHref + '\" target=\"_blank\" rel=\"noopener\">' + $expression.websiteHref + '</a>')" },
+
+        // Long-form fields (render only if present).  Use the primary field names.
+        { name: "keyApproaches",
+          expression: "DefaultValue($feature.Key_Management_Approaches, null)" },
+        { name: "methods",
+          expression: "DefaultValue($feature.Management_methods, null)" },
+        { name: "refLevel",
+          expression: "DefaultValue($feature.Fishing_reference_level, null)" },
+        { name: "hcr",
+          expression: "DefaultValue($feature.Harvest_control_rule, null)" },
+        { name: "research",
+          expression: "DefaultValue($feature.Additional_research, null)" },
+        { name: "climate",
+          expression: "DefaultValue($feature.Climate_Adaptation_Initiatives, null)" },
+
+        // Pill colour (prefer hex field; fall back to DisplayColor)
+        { name: "pillColor",
+          expression:
+            "When(!IsEmpty($feature.DisplayColorHex), $feature.DisplayColorHex," +
+            "     !IsEmpty($feature.DisplayColor),    $feature.DisplayColor," +
+            "     '#6C757D')" }
+      ],
+
+      content: [
+        // Section 1: Species managed (raw text)
+        {
+          type: "text",
+          text:
+            `<div style="font-size:12px;line-height:1.45;">
+               <div><b>Species managed</b></div>
+               <div>{expression/speciesText}</div>
+             </div>`,
+          visibleExpression: "!IsEmpty($expression.speciesText)"
+        },
+
+        // Section 2: Members (raw text)
+        {
+          type: "text",
+          text:
+            `<div style="font-size:12px;line-height:1.45;margin-top:10px;">
+               <div><b>Member nations / parties</b></div>
+               <div>{expression/membersText}</div>
+             </div>`,
+          visibleExpression: "!IsEmpty($expression.membersText)"
+        },
+
+        // Meta row: Established + Website
+        {
+          type: "text",
+          text:
+            `<div style="display:flex;gap:16px;flex-wrap:wrap;margin:12px 0 6px;font-size:12px;">
+               <div><b>Established:</b> {expression/establishedPretty}</div>
+               <div><b>Website:</b> {expression/websiteHtml}</div>
+             </div>`,
+          visibleExpression: "!IsEmpty($expression.establishedPretty) || !IsEmpty($expression.websiteHtml)"
+        },
+
+        // Convention area (only shows when available)
+        {
+          type: "text",
+          text:
+            `<div style="font-size:12px;line-height:1.55;margin-top:8px;">
+               <div><b>Convention area</b></div>
+               <div>{expression/convArea}</div>
+             </div>`,
+          visibleExpression: "!IsEmpty($expression.convArea)"
+        },
+
+        // Why critical (only shows when available)
+        {
+          type: "text",
+          text:
+            `<div style="font-size:12px;line-height:1.55;margin-top:8px;">
+               <div><b>Why critical</b></div>
+               <div>{expression/whyCritical}</div>
+             </div>`,
+          visibleExpression: "!IsEmpty($expression.whyCritical)"
+        },
+
+        // Long-form blocks (each hides if empty)
+        {
+          type: "text",
+          text:
+            `<div style="font-size:12px;line-height:1.55;margin-top:6px;">
+               <div><b>Key management approaches</b></div>
+               <div>{expression/keyApproaches}</div>
+             </div>`,
+          visibleExpression: "!IsEmpty($expression.keyApproaches)"
+        },
+        {
+          type: "text",
+          text:
+            `<div style="font-size:12px;line-height:1.55;margin-top:8px;">
+               <div><b>Management methods</b></div>
+               <div>{expression/methods}</div>
+             </div>`,
+          visibleExpression: "!IsEmpty($expression.methods)"
+        },
+        {
+          type: "text",
+          text:
+            `<div style="font-size:12px;line-height:1.55;margin-top:8px;">
+               <div><b>Fishing reference level</b></div>
+               <div>{expression/refLevel}</div>
+             </div>`,
+          visibleExpression: "!IsEmpty($expression.refLevel)"
+        },
+        {
+          type: "text",
+          text:
+            `<div style="font-size:12px;line-height:1.55;margin-top:8px;">
+               <div><b>Harvest control rule</b></div>
+               <div>{expression/hcr}</div>
+             </div>`,
+          visibleExpression: "!IsEmpty($expression.hcr)"
+        },
+        {
+          type: "text",
+          text:
+            `<div style="font-size:12px;line-height:1.55;margin-top:8px;">
+               <div><b>Additional research</b></div>
+               <div>{expression/research}</div>
+             </div>`,
+          visibleExpression: "!IsEmpty($expression.research)"
+        },
+        {
+          type: "text",
+          text:
+            `<div style="font-size:12px;line-height:1.55;margin-top:8px;">
+               <div><b>Climate adaptation initiatives</b></div>
+               <div>{expression/climate}</div>
+             </div>`,
+          visibleExpression: "!IsEmpty($expression.climate)"
+        }
+      ]
     };
   }
 
