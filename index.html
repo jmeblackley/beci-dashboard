@@ -153,6 +153,21 @@
               <button type="button" id="rfmoSpeciesClear" class="btn">Clear</button>
             </div>
           </div>
+
+          <!-- Member filter for RFMO convention areas -->
+          <div class="row">
+            <strong>Filter RFMOs by member nations / parties</strong>
+          </div>
+          <div class="row" style="flex-direction:column; gap:.5rem">
+            <label for="rfmoMemberSelect">Member nations / parties (multi-select):</label>
+            <select id="rfmoMemberSelect" multiple size="6" style="width:100%">
+              <!-- Options will be populated dynamically by the app -->
+            </select>
+            <!-- Clear member selection button -->
+            <div style="display:flex; gap:.5rem; margin-top:.3rem">
+              <button type="button" id="rfmoMemberClear" class="btn">Clear</button>
+            </div>
+          </div>
           <!-- Optional placeholder for dashed special zones -->
           <div class="row" style="margin-top:.5rem">
             <strong>Special management zones</strong>

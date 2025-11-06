@@ -220,8 +220,9 @@ require([
         // Coalesce helpers (handle alternate field names & blanks)
         { name: "fullName",
           expression:
-            // Use the full name field if present; fall back to the RFB code.
+            // Prefer the full name field, then the short name, and fall back to RFB or a default label.
             "When(!IsEmpty($feature.RFMO_Full_Name), $feature.RFMO_Full_Name," +
+            "     !IsEmpty($feature.RFMO_Name),      $feature.RFMO_Name," +
             "     !IsEmpty($feature.RFB),            $feature.RFB," +
             "     'Regional Fisheries Body')" },
         { name: "acronym",
@@ -235,12 +236,19 @@ require([
         // then fallback to Species_Managed/Member_Nations.
         { name: "speciesText",
           expression:
-            // Read the species list from Species_Managed field; use null if empty.
-            "IIf(!IsEmpty($feature.Species_Managed), $feature.Species_Managed, null)" },
+            // Coalesce species lists.  Only access a field if it exists to avoid
+            // runtime errors when a service schema differs.  Prefer SpeciesManaged,
+            // then Species_Managed.  Return null if neither field exists or both
+            // are empty.
+            "When(HasKey($feature,'SpeciesManaged') && !IsEmpty($feature['SpeciesManaged']), $feature['SpeciesManaged']," +
+            "     HasKey($feature,'Species_Managed') && !IsEmpty($feature['Species_Managed']), $feature['Species_Managed']," +
+            "     null)" },
         { name: "membersText",
           expression:
-            // Read the member list from Member_Nations field; use null if empty.
-            "IIf(!IsEmpty($feature.Member_Nations), $feature.Member_Nations, null)" },
+            // Coalesce member lists.  Prefer Members, then Member_Nations.
+            "When(HasKey($feature,'Members') && !IsEmpty($feature['Members']), $feature['Members']," +
+            "     HasKey($feature,'Member_Nations') && !IsEmpty($feature['Member_Nations']), $feature['Member_Nations']," +
+            "     null)" },
 
         // Convention area: coalesce different field names
         { name: "convArea",
@@ -249,14 +257,23 @@ require([
         { name: "whyCritical",
           expression: "DefaultValue($feature.WhyCritical, null)" },
 
-        // Established: display just the year, rounding float values to the nearest integer.
+        // Established: display year if we can parse a date, else show raw.
         { name: "establishedPretty",
           expression:
-            "IIf(IsEmpty($feature.Established_Date), null, Text(Round(Number($feature.Established_Date), 0)))" },
+            "When(IsEmpty($feature.Established_Date), null," +
+            "     TypeOf($feature.Established_Date) == 'Date', Text(Year($feature.Established_Date))," +
+            "     IsNumeric($feature.Established_Date), $feature.Established_Date," +
+            "     $feature.Established_Date)" },
 
-        // Website URL (display raw link).  Do not pre‑pend http or alter; rely on stored value.
-        { name: "websiteUrl",
-          expression: "DefaultValue($feature.Website_Link, null)" },
+        // Website: ensure protocol + clickable anchor.  Use Website_Link if present.
+        { name: "websiteHref",
+          expression:
+            "var u = $feature.Website_Link;" +
+            "IIf(IsEmpty(u), null, IIf(Left(Lower(u),4) == 'http', u, 'https://' + u))" },
+        { name: "websiteHtml",
+          expression:
+            "IIf(IsEmpty($expression.websiteHref), null," +
+            "'<a href=\"' + $expression.websiteHref + '\" target=\"_blank\" rel=\"noopener\">' + $expression.websiteHref + '</a>')" },
 
         // Long-form fields (render only if present).  Use the primary field names.
         { name: "keyApproaches",
@@ -303,26 +320,18 @@ require([
           visibleExpression: "!IsEmpty($expression.membersText)"
         },
 
-        // Established date (separate row)
+        // Meta row: Established + Website
         {
           type: "text",
           text:
-            `<div style="font-size:12px;line-height:1.55;margin-top:12px;">
+            `<div style="display:flex;gap:16px;flex-wrap:wrap;margin:12px 0 6px;font-size:12px;">
                <div><b>Established:</b> {expression/establishedPretty}</div>
+               <div><b>Website:</b> {expression/websiteHtml}</div>
              </div>`,
-          visibleExpression: "!IsEmpty($expression.establishedPretty)"
-        },
-        // Website link (separate row)
-        {
-          type: "text",
-          text:
-            `<div style="font-size:12px;line-height:1.55;margin-top:6px;">
-               <div><b>Website:</b> <a href="{expression/websiteUrl}" target="_blank" rel="noopener">{expression/websiteUrl}</a></div>
-             </div>`,
-          visibleExpression: "!IsEmpty($expression.websiteUrl)"
+          visibleExpression: "!IsEmpty($expression.establishedPretty) || !IsEmpty($expression.websiteHtml)"
         },
 
-        // Convention area (field present but not displayed)
+        // Convention area (only shows when available)
         {
           type: "text",
           text:
@@ -330,10 +339,10 @@ require([
                <div><b>Convention area</b></div>
                <div>{expression/convArea}</div>
              </div>`,
-          visibleExpression: "false"
+          visibleExpression: "!IsEmpty($expression.convArea)"
         },
 
-        // Why critical (field present but not displayed)
+        // Why critical (only shows when available)
         {
           type: "text",
           text:
@@ -341,7 +350,7 @@ require([
                <div><b>Why critical</b></div>
                <div>{expression/whyCritical}</div>
              </div>`,
-          visibleExpression: "false"
+          visibleExpression: "!IsEmpty($expression.whyCritical)"
         },
 
         // Long-form blocks (each hides if empty)
