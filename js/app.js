@@ -72,7 +72,7 @@ require([
     constraints: { wrapAround: false, rotationEnabled: false, snapToZoom: false }
   });
 
-  view.ui.add(new ScaleBar({ view, unit: "metric" }), "bottom-right");
+  //view.ui.add(new ScaleBar({ view, unit: "metric" }), "bottom-right");
 
   // ---- Legend in left panel ----
   const legendDiv = document.getElementById('legendDiv');
@@ -493,16 +493,16 @@ require([
 
   // ---- LME health polygons ----
   const lmeHealthPopup = {
-    title: "{lme_health_csv_LME_Name}",
+    title: "{LME_Name}",
     content: [
       {
         type: "fields",
         fieldInfos: [
-          { fieldName: "lme_health_csv_LME_Name", label: "Large Marine Ecosystem" },
-          { fieldName: "lme_health_csv_Overall_Status", label: "Health Status" },
-          { fieldName: "lme_health_csv_Health_Score", label: "Health Score (0–100)" },
-          { fieldName: "lme_health_csv_Primary_Concern", label: "Primary Concern" },
-          { fieldName: "lme_health_csv_Notes", label: "Additional Information" }
+          { fieldName: "LME_Name", label: "Large Marine Ecosystem" },
+          { fieldName: "Overall_Status", label: "Health Status" },
+          { fieldName: "Health_Score", label: "Health Score (0–100)" },
+          { fieldName: "Primary_Concern", label: "Primary Concern" },
+          { fieldName: "Notes", label: "Additional Information" }
         ]
       }
     ]
@@ -513,11 +513,11 @@ require([
     title: "LME health",
     visible: false,
     outFields: [
-      "lme_health_csv_LME_Name",
-      "lme_health_csv_Overall_Status",
-      "lme_health_csv_Health_Score",
-      "lme_health_csv_Primary_Concern",
-      "lme_health_csv_Notes"
+      "LME_Name",
+      "Overall_Status",
+      "Health_Score",
+      "Primary_Concern",
+      "Notes"
     ],
     popupTemplate: lmeHealthPopup
   });
@@ -526,7 +526,7 @@ require([
   function applyLmeHealthRenderer() {
     lmeHealthLayer.renderer = {
       type: "unique-value",
-      field: "lme_health_csv_Overall_Status",
+      field: "Overall_Status",
       defaultSymbol: {
         type: "simple-fill",
         color: [200, 200, 200, 0.3],
@@ -771,6 +771,34 @@ require([
   const rfmoSelect = document.getElementById("rfmoSelect");
   const btnAll  = document.getElementById("rfmoAll");
   const btnNone = document.getElementById("rfmoNone");
+  // ---- Startup defaults (no URL mutation; works in embedded iframes) ----
+  // Edit these to change first-load visibility WITHOUT changing the URL.
+  // Leave any field as null/undefined to use the code's existing defaults.
+  const STARTUP_STATE = {
+    // Start the application on the Introduction tab by default.  Previously this
+    // defaulted to the Ocean state ("env") tab.  Changing this to 'intro'
+    // ensures the landing page matches the label shown in the UI.
+    tab: 'intro',               // 'intro' | 'env' | 'pressures' | 'jurisdictions' | 'fish'
+    raster: 'sstMonthly',       // 'sstMonthly' | 'sstAnnual' | 'chlMonthly' | 'chlAnnual'
+    overlays: {
+      lmes: true,               // LME shell outline
+      eez: false,               // Exclusive Economic Zones
+      mhw: false,               // Marine heatwave mask (if available)
+      rfmo: [],                 // e.g., ['NPFC','PSC'] — empty => all on
+      fish: { stock: true, impact: true } // Fish tab toggles
+    },
+    // Set to true to have the app remember the user's last selections per session (no URL changes).
+    persistSession: true
+  };
+
+  // Helper to load/save session state without touching the URL (works when embedded)
+  function loadSessionState() {
+    try { return JSON.parse(sessionStorage.getItem('beciState') || 'null'); } catch(_) { return null; }
+  }
+  function saveSessionState(state) {
+    try { sessionStorage.setItem('beciState', JSON.stringify(state)); } catch(_) {}
+  }
+
 
   // Backwards-compat: if old RFMO checkboxes exist, we can still read them
   const rfmoChecksFallback = {
@@ -944,9 +972,17 @@ require([
         rfmoSelect.appendChild(opt);
       }
     });
-    // If no RFMO remained selected, select all allowed by default
+    // If no RFMO remained selected, decide whether to auto‑select the
+    // remaining options.  Historically the code selected all allowed RFMOs
+    // whenever none were selected.  To support a default state where no
+    // RFMO boundaries are shown on initial load, only auto‑select if the
+    // user had previously made a selection (prevSelected non‑empty) and that
+    // selection has been filtered out by the current species/member filters.
     if (rfmoSelect.selectedOptions.length === 0) {
-      Array.from(rfmoSelect.options).forEach(o => { o.selected = true; });
+      const hadPrevious = prevSelected && prevSelected.size > 0;
+      if (hadPrevious) {
+        Array.from(rfmoSelect.options).forEach(o => { o.selected = true; });
+      }
     }
     // Apply selections and filters
     applyRfmoSelectionFromUI();
@@ -981,9 +1017,12 @@ require([
 
   // Initial sync
   if (rfmoSelect) {
-    // Select all by default at first load
-    Array.from(rfmoSelect.options).forEach(o => o.selected = true);
+    // Previously the RFMO multi‑select defaulted to selecting all options.  To
+    // honour the specification that RFMO boundaries be off by default, we
+    // instead deselect all options on first load.
+    Array.from(rfmoSelect.options).forEach(o => { o.selected = false; });
   }
+  // Apply visibility after adjusting the selection so the layers start hidden.
   applyJurisdictionVisibilityFromUI();
 
   // Listeners
@@ -1118,20 +1157,32 @@ require([
       showFishPanel: false,
       showTimeSlider: false,
       activateLayers: () => {
-        // Hide all data layers and overlays for the orientation view.
-        rasters.forEach(l => l.visible = false);
+        // Hide all data layers and overlays for the introduction view.
+        // Reset visibility for all raster datasets and time-aware layers.
+        rasters.forEach((layer) => { layer.visible = false; });
         if (mhwLayer) mhwLayer.visible = false;
-        lmeShell.visible = chkLMEs ? chkLMEs.checked : true;
-        lmeShell.popupEnabled = true;
-        if (lmeHealthLayer) lmeHealthLayer.visible = false;
-        bindSliderTo(null);
-        impactLayer.visible = false;
-        stockLayer.visible = false;
+        // Hide species shift overlays.
         spLines.visible = false;
         spStart.visible = false;
         spEnd.visible = false;
-
-        applyJurisdictionVisibilityFromUI();
+        // Hide fish stock/impact overlays.
+        impactLayer.visible = false;
+        stockLayer.visible = false;
+        // Hide LME health polygons.
+        if (lmeHealthLayer) lmeHealthLayer.visible = false;
+        // Completely hide jurisdiction and shell boundaries on the intro view.
+        if (lmeShell) {
+          lmeShell.visible = false;
+          lmeShell.popupEnabled = false;
+        }
+        if (lmeLayer) lmeLayer.visible = false;
+        if (eezLayer) eezLayer.visible = false;
+        // Hide all individual RFMO layers and the aggregate layer.
+        Object.values(rfmoLayers).forEach((lyr) => { if (lyr) lyr.visible = false; });
+        if (rfmoAll) rfmoAll.visible = false;
+        // Detach the TimeSlider since nothing is displayed.
+        bindSliderTo(null);
+        // Do not restore jurisdiction visibility here; other themes will handle that.
       }
     },
     env: {
@@ -1304,13 +1355,51 @@ require([
 
   // Initial theme
   (function initTheme() {
-    const key = 'intro';
-    const theme = themes[key];
+    // Merge persisted session state with static STARTUP_STATE
+    const ss = (STARTUP_STATE.persistSession && loadSessionState()) || {};
+    const initialTab = (ss.tab || STARTUP_STATE.tab || 'intro');
+    const themeKey = themes[initialTab] ? initialTab : 'intro';
+    const theme = themes[themeKey];
     if (!theme) return;
+
+    // Apply control defaults BEFORE activating tab logic
+    const rasterVal = ss.raster || STARTUP_STATE.raster;
+    if (rasterVal) {
+      const r = document.querySelector(`input[name="rasterChoice"][value="${rasterVal}"]`);
+      if (r) r.checked = true;
+    }
+    const overlays = Object.assign({},
+      { lmes: undefined, eez: undefined, mhw: undefined, rfmo: undefined,
+        fish: { stock: undefined, impact: undefined } },
+      ss.overlays || {}, STARTUP_STATE.overlays || {}
+    );
+    if (typeof overlays.lmes === 'boolean') {
+      const el = document.getElementById('chkLMEs'); if (el) el.checked = overlays.lmes;
+    }
+    if (typeof overlays.eez === 'boolean') {
+      const el = document.getElementById('chkEEZ'); if (el) el.checked = overlays.eez;
+    }
+    if (typeof overlays.mhw === 'boolean') {
+      const el = document.getElementById('chkMHW'); if (el) el.checked = overlays.mhw;
+    }
+    if (overlays.fish && typeof overlays.fish.stock === 'boolean') {
+      const el = document.getElementById('chkStock'); if (el) el.checked = overlays.fish.stock;
+    }
+    if (overlays.fish && typeof overlays.fish.impact === 'boolean') {
+      const el = document.getElementById('chkImpact'); if (el) el.checked = overlays.fish.impact;
+    }
+    // RFMO multi-select defaults (if specific codes provided)
+    if (Array.isArray(overlays.rfmo) && overlays.rfmo.length && rfmoSelect) {
+      Array.from(rfmoSelect.options).forEach(o => { o.selected = overlays.rfmo.includes(o.value); });
+    }
+
+    // Set tab button state
     tabButtons.forEach((b) => {
-      const isActive = b.getAttribute('data-theme') === key;
+      const isActive = b.getAttribute('data-theme') === themeKey;
       b.classList.toggle('is-active', isActive);
     });
+
+    // Write panels & activate the tab's visibility logic
     if (themeTitleEl) themeTitleEl.querySelector('h2').textContent = theme.title;
     if (themeContentEl) themeContentEl.innerHTML = theme.content;
     showPanel(layerPanelEl,     theme.showLayerPanel);
@@ -1321,8 +1410,55 @@ require([
     timeSlider.visible = theme.showTimeSlider;
     theme.activateLayers();
 
-    // Ensure layer vis matches UI at load
+    // Make sure overlays reflect the just-applied UI
     syncFishToggles();
     applyJurisdictionVisibilityFromUI();
+
+    // Persist after first activation
+    if (STARTUP_STATE.persistSession) {
+      saveSessionState({ tab: themeKey, raster: rasterVal || 'sstMonthly', overlays });
+    }
   })();
+
+// Persist tab & key control changes (no URL changes)
+  if (STARTUP_STATE.persistSession) {
+    tabButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-theme');
+        const checked = document.querySelector('input[name="rasterChoice"]:checked');
+        const state = loadSessionState() || {};
+        state.tab = key;
+        state.raster = checked ? checked.value : state.raster;
+        state.overlays = state.overlays || {};
+        state.overlays.lmes = document.getElementById('chkLMEs')?.checked ?? state.overlays.lmes;
+        state.overlays.eez  = document.getElementById('chkEEZ')?.checked  ?? state.overlays.eez;
+        state.overlays.mhw  = document.getElementById('chkMHW')?.checked  ?? state.overlays.mhw;
+        state.overlays.fish = state.overlays.fish || {};
+        state.overlays.fish.stock  = document.getElementById('chkStock')?.checked  ?? state.overlays.fish.stock;
+        state.overlays.fish.impact = document.getElementById('chkImpact')?.checked ?? state.overlays.fish.impact;
+        // RFMO dropdown selections
+        if (rfmoSelect) {
+          state.overlays.rfmo = Array.from(rfmoSelect.selectedOptions).map(o => o.value);
+        }
+        saveSessionState(state);
+      });
+    });
+    document.addEventListener('change', (e) => {
+      const id = e.target && e.target.id;
+      if (!id) return;
+      const state = loadSessionState() || {};
+      state.overlays = state.overlays || {};
+      if (id === 'chkLMEs') state.overlays.lmes = !!e.target.checked;
+      if (id === 'chkEEZ')  state.overlays.eez  = !!e.target.checked;
+      if (id === 'chkMHW')  state.overlays.mhw  = !!e.target.checked;
+      if (id === 'chkStock' || id === 'chkImpact') {
+        state.overlays.fish = state.overlays.fish || {};
+        if (id === 'chkStock')  state.overlays.fish.stock  = !!e.target.checked;
+        if (id === 'chkImpact') state.overlays.fish.impact = !!e.target.checked;
+      }
+      if (e.target.name === 'rasterChoice') state.raster = e.target.value;
+      saveSessionState(state);
+    });
+  }
+
 });
