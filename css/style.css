@@ -208,6 +208,29 @@ body{ color:var(--text); }
   font-weight:600;
 }
 
+/* Species multi-select (id=speciesSelect) */
+#speciesSelect{
+  width:100%;
+  padding:.35rem;
+  border:1px solid var(--grey-300);
+  border-radius:10px;
+  background:#fff;
+  color:var(--text);
+  min-height:9.5rem; /* ~6 rows to mirror RFMO list */
+  outline:none;
+  transition:border-color .15s ease, box-shadow .15s ease;
+}
+#speciesSelect:focus{
+  border-color:var(--ring);
+  box-shadow:0 0 0 .18rem color-mix(in srgb, var(--ring) 22%, transparent);
+}
+/* Brand colour for selected species options */
+#speciesSelect option:checked{
+  background:linear-gradient(90deg, var(--beci-blue-200), var(--beci-blue-300));
+  color:#072027;
+  font-weight:600;
+}
+
 /* Small helper text */
 .hint{ color:var(--muted); font-size:.8rem; }
 

@@ -79,10 +79,6 @@ require([
   let legend;
   if (legendDiv) legend = new Legend({ view, container: legendDiv });
 
-  // The legend lives inside a fieldset (parent of legendDiv).  We can hide
-  // or show the entire legend area by toggling the fieldset’s display.
-  const legendFieldset = legendDiv ? legendDiv.parentElement : null;
-
   // ---- Time-aware rasters ----
   // Include physical units in the raster titles for clarity.  SST is measured in degrees Celsius (°C).
   const sstMonthly = new ImageryTileLayer({
@@ -248,13 +244,7 @@ require([
     lmeLayer = new FeatureLayer({
       portalItem: { id: items.lmeId },
       title: "LME boundaries",
-      visible: false,
-      outFields: ["*"],
-      // Show only the LME name in the popup for shell boundaries
-      popupTemplate: {
-        title: "{LME_Name}",
-        content: "{LME_Name}"
-      }
+      visible: false
     });
     map.add(lmeLayer);
   }
@@ -276,9 +266,6 @@ require([
         {
           name: "cleanName",
           title: "Normalized LME name",
-          // Arcade expression: for any LME name containing references to disputed bodies of water,
-          // return a neutral identifier "LME 50". This avoids using contested names.
-          // If the name does not refer to those bodies of water, return the original.
           expression: "IIf(Find(Upper($feature.LME_Name), 'JAPAN') > -1 || Find(Upper($feature.LME_Name), 'EAST SEA') > -1, 'LME 50', $feature.LME_Name)"
         }
       ]
@@ -315,23 +302,13 @@ require([
   function pickImpactColor(index) { return IMPACT_PALETTE[index % IMPACT_PALETTE.length]; }
 
   // ---- LME health polygons ----
-  // Use an expression to normalise contested LME names.  Any record whose LME name refers
-  // to a disputed body of water will display as "LME 50". Otherwise the original name is used.
   const lmeHealthPopup = {
-    title: "{expression/cleanName}",
-    expressionInfos: [
-      {
-        name: "cleanName",
-        title: "Normalized LME name",
-        expression:
-          "IIf(Find(Upper($feature.lme_health_csv_LME_Name), 'JAPAN') > -1 || Find(Upper($feature.lme_health_csv_LME_Name), 'EAST SEA') > -1, 'LME 50', $feature.lme_health_csv_LME_Name)"
-      }
-    ],
+    title: "{lme_health_csv_LME_Name}",
     content: [
       {
         type: "fields",
         fieldInfos: [
-          { fieldName: "expression/cleanName", label: "Large Marine Ecosystem" },
+          { fieldName: "lme_health_csv_LME_Name", label: "Large Marine Ecosystem" },
           { fieldName: "lme_health_csv_Overall_Status", label: "Health Status" },
           { fieldName: "lme_health_csv_Health_Score", label: "Health Score (0–100)" },
           { fieldName: "lme_health_csv_Primary_Concern", label: "Primary Concern" },
@@ -378,27 +355,22 @@ require([
 
   // ---- Species shift renderer ----
   function applySpeciesRenderer() {
-    // Update species categories based on the language guidance.  The “General” group is
-    // removed and additional groups for Anadromous and Forage are added.
     const categories = [
-      { value: "Groundfish",  label: "Groundfish",  symbol: { type: "simple-line", color: [0, 102, 204, 0.7], width: 2.5 } },
-      { value: "Pelagic",     label: "Pelagic",     symbol: { type: "simple-line", color: [255,102,   0, 0.7], width: 2.5 } },
-      { value: "Salmon",      label: "Salmon",      symbol: { type: "simple-line", color: [204,  0,   0, 0.7], width: 2.5 } },
-      { value: "Anadromous",  label: "Anadromous",  symbol: { type: "simple-line", color: [102, 51, 153, 0.7], width: 2.5 } },
-      { value: "Forage",      label: "Forage",      symbol: { type: "simple-line", color: [0, 153, 51, 0.7], width: 2.5 } }
+      { value: "Groundfish", label: "Groundfish", symbol: { type: "simple-line", color: [0, 102, 204, 0.7], width: 2.5 } },
+      { value: "Pelagic",    label: "Pelagic",    symbol: { type: "simple-line", color: [255,102,  0, 0.7], width: 2.5 } },
+      { value: "Salmon",     label: "Salmon",     symbol: { type: "simple-line", color: [204,  0,  0, 0.7], width: 2.5 } },
+      { value: "General",    label: "General",    symbol: { type: "simple-line", color: [0,    0,  0, 0.7], width: 2.5 } }
     ];
     spLines.renderer = {
       type: "unique-value",
       valueExpression: `var sg = Upper(Trim($feature.SpeciesGroup));
-        var gf   = IndexOf(sg, 'GROUNDFISH') >= 0;
-        var pel  = IndexOf(sg, 'PELAGIC') >= 0;
-        var sal  = IndexOf(sg, 'SALMON') >= 0;
-        var ana  = IndexOf(sg, 'ANADROMOUS') >= 0;
-        var forg = IndexOf(sg, 'FORAGE') >= 0;
-        return IIf(gf, 'Groundfish', IIf(pel, 'Pelagic', IIf(sal, 'Salmon', IIf(ana, 'Anadromous', IIf(forg, 'Forage', 'Other')))));`,
+        var gf  = IndexOf(sg, 'GROUNDFISH') >= 0;
+        var pel = IndexOf(sg, 'PELAGIC') >= 0;
+        var sal = IndexOf(sg, 'SALMON') >= 0;
+        return IIf(gf, 'Groundfish', IIf(pel, 'Pelagic', IIf(sal, 'Salmon', 'General')));`,
       uniqueValueInfos: categories,
       defaultSymbol: { type: "simple-line", color: [0,0,0,0.7], width: 2.5 },
-      defaultLabel: "Other"
+      defaultLabel: "General"
     };
   }
   applySpeciesRenderer();
@@ -430,26 +402,9 @@ require([
         label: f.attributes.status_label,
         color: f.attributes.status_color
       }));
-      // Dedupe by label and color.  Then apply language cleanup from the
-      // language guide: remove Moderate concern and Other/Unknown categories,
-      // and rename Likely healthy to Healthy (green).  This ensures the legend
-      // only shows the desired categories.
-      // Deduplicate by label and color, then filter out undesired categories and apply renaming.
-      const uniqDeduped = dedupe(rows, r => `${r.label}|${r.color}`);
-      const filtered = [];
-      uniqDeduped.forEach((row) => {
-        const label = row.label;
-        // Skip categories flagged for removal
-        if (label === 'Moderate concern' || label === 'Other/Unknown') return;
-        // Rename Likely healthy to Healthy (green) to match the language guide
-        if (label === 'Likely healthy') {
-          filtered.push({ value: label, label: 'Healthy (green)', color: row.color });
-        } else {
-          filtered.push({ value: label, label: label, color: row.color });
-        }
-      });
-      const uniqueValueInfos = filtered.map((r) => ({
-        value: r.value,
+      const uniq = dedupe(rows, r => `${r.label}|${r.color}`);
+      const uniqueValueInfos = uniq.map((r) => ({
+        value: r.label,
         label: r.label,
         symbol: {
           type: "simple-marker",
@@ -467,8 +422,7 @@ require([
           color: [150, 150, 150, 0.9],
           outline: { color: [255, 255, 255, 0.7], width: 0.5 }
         },
-        // After filtering, set default label to blank to avoid showing a legend entry
-        defaultLabel: "",
+        defaultLabel: "Other/Unknown",
         uniqueValueInfos
       };
     });
@@ -591,22 +545,10 @@ require([
   const chkStart = document.getElementById("chkStart");
   const chkEnd   = document.getElementById("chkEnd");
 
-  // Additional checkbox for LME boundaries in the jurisdiction panel.  This allows
-  // users to toggle LMEs on/off from the management & ecosystem boundaries tab.
-  const chkJurLMEs = document.getElementById("chkJurLMEs");
-
   if (chkLMEs) chkLMEs.addEventListener("change", () => { lmeShell.visible = chkLMEs.checked; });
   if (chkLines) chkLines.addEventListener("change", () => { spLines.visible = chkLines.checked; });
   if (chkStart) chkStart.addEventListener("change", () => { spStart.visible = chkStart.checked; });
   if (chkEnd)   chkEnd.addEventListener("change", () => { spEnd.visible   = chkEnd.checked; });
-
-  if (chkJurLMEs) chkJurLMEs.addEventListener("change", () => {
-    // When toggling LME boundaries from the management tab, also reflect
-    // the state in the main LMEs checkbox so that other themes respect the
-    // user’s preference. This ensures activateLayers uses the same value.
-    lmeShell.visible = chkJurLMEs.checked;
-    if (chkLMEs) chkLMEs.checked = chkJurLMEs.checked;
-  });
 
   const chkMHW = document.getElementById("chkMHW");
   if (chkMHW && mhwLayer) chkMHW.addEventListener("change", () => { mhwLayer.visible = chkMHW.checked; });
@@ -650,6 +592,78 @@ require([
     IATTC: document.getElementById("chkRFMO_IATTC")
   };
 
+  // ==== Species filter control ====
+  // Grab the species multi-select from the DOM (added in index.html).  It may be null
+  // if the element is omitted from the page.
+  const speciesSelect = document.getElementById("rfmoSpeciesSelect");
+
+  // Map of species name -> set of RFMO codes that manage it.  This is populated
+  // once when the RFMO layer is queried and used to update the RFMO list.
+  const speciesToRfmoMap = {};
+
+  /**
+   * Apply the species filter to all RFMO layers.  This function builds a
+   * definitionExpression for each layer that preserves the per-RFMO acronym
+   * filter and adds an OR-ed set of LIKE clauses for each selected species.
+   */
+  function applySpeciesFilter() {
+    if (!speciesSelect) return;
+    const selected = Array.from(speciesSelect.selectedOptions).map(o => o.value);
+    Object.entries(rfmoLayers).forEach(([code, lyr]) => {
+      if (!lyr) return;
+      let expr = `RFMO_Acronym='${code}'`;
+      if (selected.length > 0) {
+        // Build OR clauses for each selected species, matching either SpeciesManaged or Species_Managed
+        const parts = selected.map(sp =>
+          `(Upper(SpeciesManaged) LIKE '%${sp.toUpperCase()}%' OR Upper(Species_Managed) LIKE '%${sp.toUpperCase()}%')`
+        );
+        expr += ' AND (' + parts.join(' OR ') + ')';
+      }
+      lyr.definitionExpression = expr;
+    });
+  }
+
+  /**
+   * Update the RFMO multi-select options based on the species currently selected.
+   * When no species are selected, all RFMOs are shown.  Otherwise only the RFMOs
+   * that manage at least one selected species remain.  After rebuilding the
+   * options list, this calls applyRfmoSelectionFromUI() which applies both
+   * visibility and species filters to the layers.
+   */
+  function updateRfmoSelectBasedOnSpecies() {
+    if (!speciesSelect || !rfmoSelect) {
+      applyRfmoSelectionFromUI();
+      return;
+    }
+    const selected = Array.from(speciesSelect.selectedOptions).map(o => o.value);
+    let allowedCodes = new Set();
+    if (selected.length === 0) {
+      allowedCodes = new Set(Object.keys(rfmoFullNames));
+    } else {
+      selected.forEach(sp => {
+        const codes = speciesToRfmoMap[sp];
+        if (codes) {
+          codes.forEach(c => allowedCodes.add(c));
+        }
+      });
+    }
+    const prevSelected = new Set(Array.from(rfmoSelect.selectedOptions).map(o => o.value));
+    rfmoSelect.innerHTML = '';
+    Object.keys(rfmoFullNames).forEach(code => {
+      if (allowedCodes.has(code)) {
+        const opt = document.createElement('option');
+        opt.value = code;
+        opt.textContent = rfmoFullNames[code];
+        if (prevSelected.has(code) || selected.length === 0) opt.selected = true;
+        rfmoSelect.appendChild(opt);
+      }
+    });
+    if (rfmoSelect.selectedOptions.length === 0) {
+      Array.from(rfmoSelect.options).forEach(o => { o.selected = true; });
+    }
+    applyRfmoSelectionFromUI();
+  }
+
   function selectedRfmoCodes() {
     if (rfmoSelect) {
       return new Set(Array.from(rfmoSelect.selectedOptions).map(o => o.value));
@@ -667,6 +681,9 @@ require([
     Object.entries(rfmoLayers).forEach(([code, lyr]) => {
       if (lyr) lyr.visible = sel.has(code);
     });
+    // Re-apply species filter when RFMO visibility changes to ensure
+    // definition expressions reflect current selections.
+    applySpeciesFilter();
   }
 
   function applyJurisdictionVisibilityFromUI() {
@@ -701,6 +718,52 @@ require([
     });
   }
 
+  // Populate the speciesSelect with unique species names by querying the full RFMO layer.
+  if (rfmoAll && speciesSelect) {
+    rfmoAll.queryFeatures({
+      where: "1=1",
+      outFields: ["SpeciesManaged", "Species_Managed", "RFMO_Acronym"],
+      returnGeometry: false
+    }).then((fs) => {
+      const speciesSet = new Set();
+      fs.features.forEach((feature) => {
+        const code = feature.attributes["RFMO_Acronym"];
+        ["SpeciesManaged", "Species_Managed"].forEach((field) => {
+          const list = feature.attributes[field];
+          if (list) {
+            list.split(/[;,]/).forEach((s) => {
+              const trimmed = s.trim();
+              if (!trimmed) return;
+              speciesSet.add(trimmed);
+              if (!speciesToRfmoMap[trimmed]) speciesToRfmoMap[trimmed] = new Set();
+              speciesToRfmoMap[trimmed].add(code);
+            });
+          }
+        });
+      });
+      const sorted = Array.from(speciesSet).sort();
+      sorted.forEach((sp) => {
+        const opt = document.createElement("option");
+        opt.value = sp;
+        opt.textContent = sp;
+        speciesSelect.appendChild(opt);
+      });
+      // Initially synchronise the RFMO list and filters with no species selected
+      updateRfmoSelectBasedOnSpecies();
+    });
+    // When the user changes the species selection, update the RFMO list and filters
+    speciesSelect.addEventListener("change", updateRfmoSelectBasedOnSpecies);
+  }
+
+  // Wire up the clear species button to reset selections
+  const speciesClearBtn = document.getElementById("rfmoSpeciesClear");
+  if (speciesClearBtn && speciesSelect) {
+    speciesClearBtn.addEventListener("click", () => {
+      Array.from(speciesSelect.options).forEach(o => { o.selected = false; });
+      updateRfmoSelectBasedOnSpecies();
+    });
+  }
+
   // ---- Themes ----
   const themes = {
     intro: {
@@ -718,7 +781,6 @@ require([
       showJurisPanel: false,
       showFishPanel: false,
       showTimeSlider: false,
-      showLegend: false,
       activateLayers: () => {
         // Hide all data layers and overlays for the orientation view.
         rasters.forEach(l => l.visible = false);
@@ -737,25 +799,47 @@ require([
       }
     },
     env: {
-      // Environmental Conditions tab with sub-tabs for Ocean state and Extreme events.
-      title: '',
-      content: '',
-      // Hide all panels by default; sub-tabs will override visibility via applyEnvSubTab().
-      showLayerPanel: false,
-      showVectorPanel: false,
+      // Ocean state tab: environmental conditions such as SST and chlorophyll provide a baseline context.
+      title: "Ocean state",
+      content:
+        [
+          '<p>View environmental conditions across the North Pacific Ocean. Select a dataset below and use the time slider to explore temporal patterns. Only one dataset is displayed at a time to maintain temporal clarity.</p>',
+          '<p>Environmental conditions such as sea surface temperature (SST) and chlorophyll-<i>a</i> provide a baseline context.</p>'
+        ].join(''),
+      showLayerPanel: true,
+      showVectorPanel: true,
       showPressuresPanel: false,
       showJurisPanel: false,
       showFishPanel: false,
-      showTimeSlider: false,
-      showLegend: false,
+      showTimeSlider: true,
       activateLayers: () => {
-        // Delegate control to the sub-tab logic for Environmental Conditions.
-        applyEnvSubTab();
+        // Show the selected raster dataset and hide others.
+        const checked = document.querySelector('input[name="rasterChoice"]:checked');
+        if (checked) {
+          if (checked.value === "sstMonthly") setOnlyVisible(sstMonthly);
+          if (checked.value === "sstAnnual")  setOnlyVisible(sstAnnual);
+          if (checked.value === "chlMonthly") setOnlyVisible(chlMonthly);
+          if (checked.value === "chlAnnual")  setOnlyVisible(chlAnnual);
+        } else {
+          setOnlyVisible(sstMonthly);
+        }
+        // Hide marine heatwave and other overlays by default.
+        if (mhwLayer) mhwLayer.visible = false;
+        lmeShell.visible = chkLMEs ? chkLMEs.checked : true;
+        lmeShell.popupEnabled = true;
+        if (lmeHealthLayer) lmeHealthLayer.visible = false;
+        spLines.visible = false;
+        spStart.visible = false;
+        spEnd.visible = false;
+        impactLayer.visible = false;
+        stockLayer.visible = false;
+
+        applyJurisdictionVisibilityFromUI();
       }
     },
     pressures: {
       // Ecosystem status tab: compare health indicators across LMEs.
-      title: "Ecosystem Status",
+      title: "Ecosystem status",
       content:
         [
           '<p>View and compare ecosystem health indicators across North Pacific Large Marine Ecosystems (LMEs), including physical conditions, biological productivity and fisheries status. Standardised metrics enable cross‑regional comparisons to identify basin‑wide patterns and regional anomalies.</p>',
@@ -768,7 +852,6 @@ require([
       showJurisPanel: false,
       showFishPanel: false,
       showTimeSlider: false,
-      showLegend: true,
       activateLayers: () => {
         // Hide rasters and heatwave masks. LME health is static.
         rasters.forEach(l => l.visible = false);
@@ -794,7 +877,7 @@ require([
     },
     jurisdictions: {
       // Management & ecosystem boundaries tab: explore governance layers.
-      title: "Management & Ecosystem Boundaries",
+      title: "Management & ecosystem boundaries",
       content:
         [
           '<p>View management and ecosystem boundaries such as Exclusive Economic Zones (EEZs), Regional Fisheries Management Organisation (RFMO) convention areas, and Large Marine Ecosystems (LMEs) that define how ocean resources are governed and monitored.</p>',
@@ -806,7 +889,6 @@ require([
       showJurisPanel: true,
       showFishPanel: false,
       showTimeSlider: false,
-      showLegend: false,
       activateLayers: () => {
         rasters.forEach(l => l.visible = false);
         if (mhwLayer) mhwLayer.visible = false;
@@ -825,7 +907,7 @@ require([
     },
     fish: {
       // Fish dynamics & impacts tab: explore fish population and impact data.
-      title: "Fish Dynamics & Impacts",
+      title: "Fish dynamics & impacts",
       content:
         [
           '<p>Explore fish population trends, distribution patterns and reported impacts.</p>',
@@ -837,7 +919,6 @@ require([
       showJurisPanel: false,
       showFishPanel: true,
       showTimeSlider: false,
-      showLegend: true,
       activateLayers: () => {
         rasters.forEach(l => l.visible = false);
         if (mhwLayer) mhwLayer.visible = false;
@@ -865,117 +946,6 @@ require([
   const themeContentEl   = document.getElementById('themeContent');
   const tabButtons       = document.querySelectorAll('.tab');
 
-  // ---- Environmental Conditions sub-tabs ----
-  const envSubTabsEl      = document.getElementById('envSubTabs');
-  const envSubTabButtons  = envSubTabsEl ? envSubTabsEl.querySelectorAll('.subtab') : [];
-  let currentEnvSubTab    = 'ocean';
-
-  /**
-   * Apply the current Environmental Conditions sub-tab settings.  This function
-   * updates the side panel title, description and which UI panels are shown
-   * based on whether the user is viewing the Ocean state or Extreme events.
-   */
-  function applyEnvSubTab() {
-    // Reset some defaults: hide all optional panels; this theme will decide which to show
-    showPanel(layerPanelEl, false);
-    showPanel(vectorPanelEl, false);
-    showPanel(pressuresPanelEl, false);
-    showPanel(jurisPanelEl, false);
-    showPanel(fishPanelEl, false);
-    // Default hide time slider and legend; we will enable as needed
-    timeSlider.visible = false;
-    if (legend) legend.visible = false;
-    if (legendFieldset) legendFieldset.style.display = 'none';
-
-    if (currentEnvSubTab === 'ocean') {
-      // ---- Ocean state sub-view ----
-      // Title
-      if (themeTitleEl) themeTitleEl.querySelector('h2').textContent = 'Ocean State';
-      // Description
-      if (themeContentEl) themeContentEl.innerHTML = [
-        '<p>View environmental conditions across the north Pacific Ocean.</p>',
-        '<p>Select a dataset below and use the time slider to explore temporal patterns. Only one dataset displays at a time to maintain temporal clarity.</p>'
-      ].join('');
-      // Panels: show raster dataset selection, vector overlays and the heatwave toggle
-      showPanel(layerPanelEl, true);
-      showPanel(vectorPanelEl, true);
-      showPanel(pressuresPanelEl, true);
-      // Show time slider and legend
-      timeSlider.visible = true;
-      if (legend) legend.visible = true;
-      if (legendFieldset) legendFieldset.style.display = '';
-      // Show rasters based on the selected radio button
-      const checked = document.querySelector('input[name="rasterChoice"]:checked');
-      if (checked) {
-        if (checked.value === 'sstMonthly') setOnlyVisible(sstMonthly);
-        if (checked.value === 'sstAnnual')  setOnlyVisible(sstAnnual);
-        if (checked.value === 'chlMonthly') setOnlyVisible(chlMonthly);
-        if (checked.value === 'chlAnnual')  setOnlyVisible(chlAnnual);
-      } else {
-        setOnlyVisible(sstMonthly);
-      }
-      // Heatwave overlay visible if checkbox is checked
-      if (mhwLayer) mhwLayer.visible = chkMHW ? !!chkMHW.checked : false;
-      // LME boundaries and species overlays
-      lmeShell.visible = chkLMEs ? !!chkLMEs.checked : true;
-      lmeShell.popupEnabled = true;
-      if (lmeHealthLayer) lmeHealthLayer.visible = false;
-      // Hide fish and species shift layers
-      spLines.visible = false;
-      spStart.visible = false;
-      spEnd.visible   = false;
-      impactLayer.visible = false;
-      stockLayer.visible  = false;
-      // Sync RFMO/EEZ visibility
-      applyJurisdictionVisibilityFromUI();
-      // Apply fish toggles to ensure stock/impact layers remain off
-      syncFishToggles();
-    } else if (currentEnvSubTab === 'extreme') {
-      // ---- Extreme events sub-view ----
-      if (themeTitleEl) themeTitleEl.querySelector('h2').textContent = 'Extreme Events';
-      if (themeContentEl) themeContentEl.innerHTML = [
-        '<p>Track extreme events that affect marine ecosystems.</p>',
-        '<p>Toggle to view marine heatwave events and use the timeline to explore the spatial and temporal patterns of these events.</p>'
-      ].join('');
-      // Only vector overlays (LMEs) and heatwave toggle should show
-      showPanel(layerPanelEl, false);
-      showPanel(vectorPanelEl, true);
-      showPanel(pressuresPanelEl, true);
-      // Show time slider and legend
-      timeSlider.visible = true;
-      if (legend) legend.visible = true;
-      if (legendFieldset) legendFieldset.style.display = '';
-      // Hide all rasters
-      rasters.forEach(l => l.visible = false);
-      // Heatwave overlay visible according to checkbox
-      if (mhwLayer) mhwLayer.visible = chkMHW ? !!chkMHW.checked : false;
-      // LME boundaries
-      lmeShell.visible = chkLMEs ? !!chkLMEs.checked : true;
-      lmeShell.popupEnabled = true;
-      if (lmeHealthLayer) lmeHealthLayer.visible = false;
-      // Hide fish and species shift layers
-      spLines.visible = false;
-      spStart.visible = false;
-      spEnd.visible   = false;
-      impactLayer.visible = false;
-      stockLayer.visible  = false;
-      // Sync RFMO/EEZ visibility
-      applyJurisdictionVisibilityFromUI();
-      syncFishToggles();
-    }
-  }
-
-  // Listen for sub-tab clicks
-  envSubTabButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const tab = btn.getAttribute('data-env-subtab');
-      if (!tab || tab === currentEnvSubTab) return;
-      currentEnvSubTab = tab;
-      envSubTabButtons.forEach((b) => b.classList.toggle('is-active', b === btn));
-      applyEnvSubTab();
-    });
-  });
-
   function showPanel(el, show) { if (el) el.style.display = show ? '' : 'none'; }
 
   tabButtons.forEach((btn) => {
@@ -984,35 +954,15 @@ require([
       if (!key || !themes[key]) return;
       tabButtons.forEach(b => b.classList.toggle('is-active', b === btn));
       const theme = themes[key];
-      // Show or hide the Environmental Conditions sub-tabs container
-      if (envSubTabsEl) envSubTabsEl.style.display = (key === 'env') ? '' : 'none';
-      // For non-env themes, reset currentEnvSubTab to ocean and clear active class on sub-tabs
-      if (key !== 'env' && envSubTabButtons.length) {
-        currentEnvSubTab = 'ocean';
-        envSubTabButtons.forEach((b) => b.classList.toggle('is-active', b.getAttribute('data-env-subtab') === 'ocean'));
-      }
-      // Update title and content for themes other than env; env will override via applyEnvSubTab
-      if (key !== 'env') {
-        if (themeTitleEl) themeTitleEl.querySelector('h2').textContent = theme.title;
-        if (themeContentEl) themeContentEl.innerHTML = theme.content;
-      }
-      // For non-env themes, respect the show/hide flags defined by the theme; env will override via applyEnvSubTab
+      if (themeTitleEl) themeTitleEl.querySelector('h2').textContent = theme.title;
+      if (themeContentEl) themeContentEl.innerHTML = theme.content;
       showPanel(layerPanelEl,     theme.showLayerPanel);
       showPanel(vectorPanelEl,    theme.showVectorPanel);
       showPanel(pressuresPanelEl, theme.showPressuresPanel);
       showPanel(jurisPanelEl,     theme.showJurisPanel);
       showPanel(fishPanelEl,      theme.showFishPanel);
       timeSlider.visible = theme.showTimeSlider;
-      // Show or hide the legend for non-env themes; env will control legend inside applyEnvSubTab
-      if (key !== 'env') {
-        if (legend) legend.visible = !!theme.showLegend;
-        if (legendFieldset) legendFieldset.style.display = theme.showLegend ? '' : 'none';
-      }
       theme.activateLayers();
-      // If the selected theme is env, apply the sub-tab logic after activation
-      if (key === 'env') {
-        applyEnvSubTab();
-      }
     });
   });
 
@@ -1033,9 +983,6 @@ require([
     showPanel(jurisPanelEl,     theme.showJurisPanel);
     showPanel(fishPanelEl,      theme.showFishPanel);
     timeSlider.visible = theme.showTimeSlider;
-    // Apply legend visibility for the initial theme.
-    if (legend) legend.visible = !!theme.showLegend;
-    if (legendFieldset) legendFieldset.style.display = theme.showLegend ? '' : 'none';
     theme.activateLayers();
 
     // Ensure layer vis matches UI at load
