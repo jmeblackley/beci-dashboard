@@ -34,13 +34,16 @@
 </head>
 <body>
   <header class="topbar">
-    <strong>BECI Interactive Map (Draft)</strong>
+    <!-- Update the header to reflect the broader Knowledge Network focus. -->
+    <strong>BECI Knowledge Network (Draft)</strong>
     <div class="tablist" id="tablist">
-      <button class="tab is-active" data-theme="intro">Introduction</button>
-      <button class="tab" data-theme="env">Environmental conditions</button>
-      <button class="tab" data-theme="pressures">Environmental pressures</button>
-      <button class="tab" data-theme="jurisdictions">Management jurisdictions</button>
-      <button class="tab" data-theme="fish">Fish impacts</button>
+      <!-- Rename the tabs to align with the language guide: Home and Ocean state. -->
+      <!-- Updated tab labels to reflect the language guidance. -->
+      <button class="tab is-active" data-theme="intro">Orientation</button>
+      <button class="tab" data-theme="env">Ocean&nbsp;state</button>
+      <button class="tab" data-theme="pressures">Ecosystem&nbsp;status</button>
+      <button class="tab" data-theme="jurisdictions">Management&nbsp;&amp;&nbsp;Ecosystem&nbsp;Boundaries</button>
+      <button class="tab" data-theme="fish">Fish dynamics&nbsp;&amp;&nbsp;impacts</button>
     </div>
   </header>
 
@@ -48,7 +51,7 @@
     <aside class="side">
       <div id="themeTitle" class="section">
         <h2>Welcome</h2>
-        <p class="muted">Switch tabs to explore datasets. The map persists; only content and layers change.</p>
+        <!-- The tagline below the heading is intentionally left blank.  Each theme will provide its own description in the content area. -->
       </div>
 
       <div id="themeContent" class="section">
@@ -63,14 +66,17 @@
         <fieldset>
           <legend>Raster layers (exclusive)</legend>
           <div class="row">
-            <label><input type="radio" name="rasterChoice" value="sstMonthly" checked> SST (Monthly)</label>
-            <label><input type="radio" name="rasterChoice" value="sstAnnual"> SST (Annual)</label>
-            <label><input type="radio" name="rasterChoice" value="chlMonthly"> Chlorophyll (Monthly)</label>
+            <!-- Include physical units in the raster labels so users know what each measurement represents. -->
+            <label><input type="radio" name="rasterChoice" value="sstMonthly" checked> SST (Monthly, °C)</label>
+            <label><input type="radio" name="rasterChoice" value="sstAnnual"> SST (Annual, °C)</label>
+            <label><input type="radio" name="rasterChoice" value="chlMonthly"> Chlorophyll (Monthly, mg/m³)</label>
             <!-- Added option for annual chlorophyll.  Using a separate value allows the app logic
-                 to toggle this layer independently of the monthly chlorophyll. -->
-            <label><input type="radio" name="rasterChoice" value="chlAnnual"> Chlorophyll (Annual)</label>
+                 to toggle this layer independently of the monthly chlorophyll. Include units (mg/m³). -->
+            <label><input type="radio" name="rasterChoice" value="chlAnnual"> Chlorophyll (Annual, mg/m³)</label>
           </div>
-          <p class="muted" style="margin:.5rem 0 0">Only one is shown at a time to avoid ambiguous time states.</p>
+          <!-- Note: the guidance about displaying a single dataset at a time has been
+               incorporated into the Ocean state description.  We remove the
+               redundant tip here to declutter the panel. -->
         </fieldset>
       </div>
 
@@ -78,36 +84,70 @@
         <fieldset>
           <legend>Species overlays</legend>
           <div class="row">
-            <!-- The LMEs layer is always visible across all tabs.  The checkbox below allows
-                 the user to toggle it on or off without affecting the underlying health
-                 polygons.  Renamed from "Admin areas" for clarity. -->
+            <!-- Allow users to toggle Large Marine Ecosystem boundaries on and off.  The species shift
+                 controls have been removed per the latest check-in notes to simplify the panel. -->
             <label><input type="checkbox" id="chkLMEs" checked> LMEs</label>
-            <label><input type="checkbox" id="chkLines" checked> Species shift (lines)</label>
-            <label><input type="checkbox" id="chkStart" checked> Species shift (start)</label>
-            <label><input type="checkbox" id="chkEnd" checked> Species shift (end)</label>
           </div>
         </fieldset>
       </div>
 
-      <!-- Environmental pressures panel: toggles for stress event overlays -->
+      <!-- Extreme events panel: toggles for heatwave overlays -->
       <div id="pressuresPanel" class="section" style="display:none">
         <fieldset>
-          <legend>Stress event overlays</legend>
+          <legend>Extreme events</legend>
           <div class="row">
-            <label><input type="checkbox" id="chkMHW" checked> Marine heatwave mask</label>
+            <label><input type="checkbox" id="chkMHW" checked> Marine heatwave events</label>
+          </div>
+        </fieldset>
+      </div>
+      <!-- Jurisdictions panel: toggles for governance and ecosystem boundaries -->
+      <div id="jurisPanel" class="section" style="display:none">
+        <fieldset>
+          <legend>Management &amp; ecosystem boundaries</legend>
+          <!-- EEZ boundaries -->
+          <div class="row">
+            <strong>EEZ boundaries</strong>
+          </div>
+          <div class="row" style="margin-bottom:.25rem">
+            <label><input type="checkbox" id="chkEEZ" checked> EEZ boundaries</label>
+          </div>
+          <!-- LME boundaries -->
+          <div class="row">
+            <strong>Large Marine Ecosystems (LMEs)</strong>
+          </div>
+          <div class="row" style="margin-bottom:.25rem">
+            <label><input type="checkbox" id="chkJurLMEs" checked> LMEs</label>
+          </div>
+          <!-- RFMO convention areas -->
+          <div class="row">
+            <strong>Regional Fisheries Management Organisations</strong>
+          </div>
+          <div class="row" style="flex-direction:column; gap:.5rem">
+            <label for="rfmoSelect">RFMO boundaries (multi‑select):</label>
+            <select id="rfmoSelect" multiple size="6" style="width:100%">
+              <option value="NPFC">North Pacific Fisheries Commission (NPFC)</option>
+              <option value="NPAFC">North Pacific Anadromous Fish Commission (NPAFC)</option>
+              <option value="PSC">Pacific Salmon Commission (PSC)</option>
+              <option value="IPHC">International Pacific Halibut Commission (IPHC)</option>
+              <option value="WCPFC">Western &amp; Central Pacific Fisheries Commission (WCPFC)</option>
+              <option value="IATTC">Inter-American Tropical Tuna Commission (IATTC)</option>
+            </select>
+            <div style="display:flex; gap:.5rem">
+              <button type="button" id="rfmoAll"  class="btn">All</button>
+              <button type="button" id="rfmoNone" class="btn">None</button>
+            </div>
+            <small>Tip: use Shift/Ctrl (Cmd on Mac) to pick several.</small>
+          </div>
+          <!-- Optional placeholder for dashed special zones -->
+          <div class="row" style="margin-top:.5rem">
+            <strong>Special management zones</strong>
+          </div>
+          <div class="row">
+            <label><input type="checkbox" id="chkSpecial" disabled> (coming soon)</label>
           </div>
         </fieldset>
       </div>
 
-      <!-- Jurisdictions panel: toggles for governance overlays -->
-      <div id="jurisPanel" class="section" style="display:none">
-        <fieldset>
-          <legend>Jurisdiction overlays</legend>
-          <div class="row">
-            <label><input type="checkbox" id="chkLME" checked> LME boundaries</label>
-          </div>
-        </fieldset>
-      </div>
 
       <!-- Fish panel: toggles for fish stock and ecosystem impact overlays -->
       <div id="fishPanel" class="section" style="display:none">

@@ -101,3 +101,126 @@ html, body {
   font-size: 0.9rem;
   line-height: 1.4;
 }
+
+/* ===== BECI brand tokens (added) ===== */
+:root{
+  --beci-blue-50:  #e0faff;
+  --beci-blue-200: #b1e2ec;
+  --beci-blue-300: #86bfca;
+  --beci-teal-700:#2a6d7c;
+  --beci-ink-900: #07181c;
+  --beci-sand:    #d7cca7;
+
+  --grey-800:     #333333;
+  --grey-600:     #626262;
+  --grey-300:     #bfbfbf;
+  --grey-100:     #f7f7f7;
+
+  --bg-surface:   #ffffff;
+  --bg-panel:     var(--grey-100);
+  --text:         var(--beci-ink-900);
+  --muted:        var(--grey-600);
+  --ring:         var(--beci-teal-700);
+  --accent:       var(--beci-teal-700);
+  --accent-weak:  var(--beci-blue-300);
+}
+
+/* Body text colour */
+body{ color:var(--text); }
+
+/* Top bar: swap to brand teal (keeps height/layout) */
+.topbar{
+  background: linear-gradient(90deg, var(--beci-teal-700), color-mix(in srgb, var(--beci-teal-700) 75%, var(--beci-blue-300)));
+}
+
+/* Tabs: support both .active and .is-active classes */
+.tabs{ gap: 2px; }
+.tab{
+  border-radius: 8px;
+  padding: 6px 12px;
+  transition: background-color .15s ease,color .15s ease;
+}
+.tab:hover{ background-color: rgba(255,255,255,.16); }
+.tab.active,
+.tab.is-active{
+  background-color: rgba(255,255,255,.24);
+  font-weight: 600;
+}
+
+/* Sidebar/panels: softer container look */
+.sidebar{
+  background: var(--bg-panel);
+  border-right: 1px solid var(--grey-300);
+}
+.panel{
+  border-bottom: 1px dashed color-mix(in srgb, var(--grey-300) 80%, white);
+}
+
+/* Legend header cue */
+#legendDiv::before{
+  content:"Legend";
+  display:block;
+  font-weight:600;
+  font-size:.9rem;
+  color:#fff;
+  background:linear-gradient(90deg,var(--accent),var(--accent-weak));
+  padding:.4rem .6rem;
+  border-radius:8px;
+  margin:0 0 8px 0;
+}
+
+/* Buttons used for RFMO All/None (and any .btn) */
+.btn{
+  appearance:none;
+  border:1px solid var(--accent);
+  border-radius:10px;
+  padding:.45rem .7rem;
+  background:var(--accent);
+  color:#fff;
+  font-weight:600;
+  cursor:pointer;
+  transition:filter .15s ease, transform .02s ease;
+}
+.btn:hover{ filter:brightness(1.05); }
+.btn:active{ transform:translateY(1px); }
+.btn.btn--ghost{ background:#fff; color:var(--accent); }
+
+/* RFMO multi-select (id=rfmoSelect) */
+#rfmoSelect{
+  width:100%;
+  padding:.35rem;
+  border:1px solid var(--grey-300);
+  border-radius:10px;
+  background:#fff;
+  color:var(--text);
+  min-height:9.5rem; /* ~6 rows */
+  outline:none;
+  transition:border-color .15s ease, box-shadow .15s ease;
+}
+#rfmoSelect:focus{
+  border-color:var(--ring);
+  box-shadow:0 0 0 .18rem color-mix(in srgb, var(--ring) 22%, transparent);
+}
+/* Brand colour for selected options (modern browsers) */
+#rfmoSelect option:checked{
+  background:linear-gradient(90deg, var(--beci-blue-200), var(--beci-blue-300));
+  color:#072027;
+  font-weight:600;
+}
+
+/* Small helper text */
+.hint{ color:var(--muted); font-size:.8rem; }
+
+/* Esri TimeSlider accent */
+.esri-slider__thumb,
+.esri-slider__anchor{ background:var(--accent) !important; border-color:var(--accent) !important; }
+.esri-slider__track__segment--interactive{ background:var(--accent-weak) !important; }
+.esri-time-slider{ border-radius:10px; border:1px solid var(--grey-300); background:#fff; }
+
+/* Checkbox accent (EEZ/LMEs/species) */
+input[type="checkbox"]{ accent-color: var(--accent); }
+
+/* Optional nicer scrollbar for RFMO list (Blink/WebKit) */
+#rfmoSelect::-webkit-scrollbar{ width:10px; }
+#rfmoSelect::-webkit-scrollbar-thumb{ background:var(--beci-blue-300); border-radius:10px; }
+#rfmoSelect::-webkit-scrollbar-track{ background:#f0f6f8; border-radius:10px; }
