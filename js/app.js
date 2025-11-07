@@ -711,49 +711,119 @@ require([
     outFields: ["*"],
     popupTemplate: { title: "{Impact_Type}", content: "{popup}" }
   });
+  // Configure the stock status layer.  This layer displays point
+  // observations of fish stock conditions.  We provide a custom
+  // popup template that formats the descriptive text into a more
+  // readable card.  The content uses Arcade expressionInfos to
+  // generate HTML on the fly, replacing pipe‑delimited sections
+  // with line breaks and drawing a coloured status pill.  Note
+  // that the layer is initially hidden; visibility is controlled
+  // via the checkbox in the Fish tab.
   const stockLayer = new FeatureLayer({
     portalItem: { id: items.stockStatusId || "7ac11d00696c4760bd80666254ca2c6f" },
     title: "Stock Status",
     visible: false,
     outFields: ["*"],
-    popupTemplate: { title: "{species_name}", content: "{popup}" }
+    popupTemplate: {
+      // Use the species name as the popup title
+      title: `{species_name}`,
+      expressionInfos: [
+        // Replace any pipe separators (|) in the popup text with <br>
+        // for improved readability.  If the popup field is empty,
+        // return a null so that the corresponding content block hides.
+        {
+          name: "popupHtml",
+          expression: `IIf(IsEmpty($feature.popup), null, Replace($feature.popup, '|', '<br/>'))`
+        },
+        // Expose the status colour as a hex value for styling the pill
+        {
+          name: "statusColor",
+          expression: "DefaultValue($feature.status_color, '#888888')"
+        },
+        // Expose the status label for labelling the pill
+        {
+          name: "statusLabel",
+          expression: "DefaultValue($feature.status_label, 'Unknown')"
+        }
+      ],
+      content: [
+        {
+          type: "text",
+          text:
+            `<div style="font-size:12px;line-height:1.45;">
+               <div style="margin-bottom:6px;"><strong>Status:</strong>
+                 <span style="font-size:12px;padding:2px 8px;border-radius:9999px;` +
+                 `background:{expression/statusColor};color:#fff;margin-left:6px;">
+                   {expression/statusLabel}
+                 </span>
+               </div>
+               <div>{expression/popupHtml}</div>
+             </div>`,
+          visibleExpression: "!IsEmpty($expression.popupHtml)"
+        }
+      ]
+    }
   });
   map.addMany([impactLayer, stockLayer]);
 
+  /**
+   * Apply a custom renderer to the stock status layer.
+   *
+   * The default implementation queried the layer to derive unique
+   * categories from the data.  This rewrite defines an explicit
+   * mapping that reflects the language guide provided by the user.
+   *
+   * - Moderate concern and Other/Unknown are omitted entirely by
+   *   applying a definitionExpression on the layer.  These records
+   *   will still exist in the service, but they will not render on
+   *   the map or appear in the legend.
+   * - Likely healthy is grouped with Healthy and displayed using
+   *   the same green symbol.  This grouping is implemented via a
+   *   valueExpression so that the renderer sees both values as
+   *   "Healthy".
+   * - Each legend entry includes a descriptive label and colour.
+   */
   function applyStockRenderer() {
-    stockLayer.queryFeatures({
-      where: "status_label IS NOT NULL",
-      outFields: ["status_label", "status_color"],
-      returnGeometry: false
-    }).then((fs) => {
-      const rows = fs.features.map(f => ({
-        label: f.attributes.status_label,
-        color: f.attributes.status_color
-      }));
-      const uniq = dedupe(rows, r => `${r.label}|${r.color}`);
-      const uniqueValueInfos = uniq.map((r) => ({
-        value: r.label,
-        label: r.label,
+    // Exclude categories flagged for deletion from the legend
+    //stockLayer.definitionExpression = "status_label NOT IN ('Moderate concern','Other/Unknown')";
+
+    // Define the mapping from status to label and colour (hex string)
+    const legendMap = {
+      "Overfished":        { label: "Overfished",   color: "#e74c3c" },
+      "Declining":         { label: "Declining",           color: "#f39c12" },
+      "Variable by stock": { label: "Variable by stock",    color: "#f1c40f" },
+      "Healthy":           { label: "Healthy",              color: "#2ecc71" }
+    };
+
+    const uniqueValueInfos = Object.keys(legendMap).map((status) => {
+      const { label, color } = legendMap[status];
+      return {
+        value: status,
+        label,
         symbol: {
           type: "simple-marker",
           size: 9,
-          color: parseHexColor(r.color, 0.95),
+          color: parseHexColor(color, 0.95),
           outline: { color: [255, 255, 255, 0.7], width: 0.5 }
         }
-      }));
-      stockLayer.renderer = {
-        type: "unique-value",
-        field: "status_label",
-        defaultSymbol: {
-          type: "simple-marker",
-          size: 9,
-          color: [150, 150, 150, 0.9],
-          outline: { color: [255, 255, 255, 0.7], width: 0.5 }
-        },
-        defaultLabel: "Other/Unknown",
-        uniqueValueInfos
       };
     });
+
+    // Apply the unique-value renderer.  Use a valueExpression to
+    // normalise "Likely healthy" into "Healthy".  Any other
+    // unexpected status values fall through to the default symbol.
+    stockLayer.renderer = {
+      type: "unique-value",
+      valueExpression: `When($feature.status_label == 'Likely healthy', 'Healthy', $feature.status_label)`,
+      uniqueValueInfos,
+      defaultSymbol: {
+        type: "simple-marker",
+        size: 9,
+        color: [150, 150, 150, 0.9],
+        outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+      },
+      defaultLabel: ""
+    };
   }
 
   function applyImpactRenderer() {
@@ -935,7 +1005,10 @@ require([
       eez: false,               // Exclusive Economic Zones
       mhw: false,               // Marine heatwave mask (if available)
       rfmo: [],                 // e.g., ['NPFC','PSC'] — empty => all on
-      fish: { stock: true, impact: true } // Fish tab toggles
+      // Set the stock status overlay off by default.  Impact points
+      // remain on by default so users see ecosystem impacts when
+      // entering the Fish dynamics tab.
+      fish: { stock: false, impact: true }
     },
     // Set to true to have the app remember the user's last selections per session (no URL changes).
     persistSession: true
