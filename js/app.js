@@ -928,12 +928,14 @@ require([
   const chkStart = document.getElementById("chkStart");
   const chkEnd   = document.getElementById("chkEnd");
   const chkJurLMEs = document.getElementById("chkJurLMEs");
+  
 
   if (chkLMEs) chkLMEs.addEventListener("change", () => { lmeShell.visible = chkLMEs.checked; });
   if (chkLines) chkLines.addEventListener("change", () => { spLines.visible = chkLines.checked; });
   if (chkStart) chkStart.addEventListener("change", () => { spStart.visible = chkStart.checked; });
   if (chkEnd)   chkEnd.addEventListener("change", () => { spEnd.visible   = chkEnd.checked; });
-  if (chkJurLMEs && lmeShell) chkJurLMEs.addEventListener("change", () => {lmeShell.visible = chkJurLMEs.checked;})
+  if (chkJurLMEs && lmeShell) chkJurLMEs.addEventListener("change", () => {lmeShell.visible = chkJurLMEs.checked;});
+  
 
   const chkMHW = document.getElementById("chkMHW");
   if (chkMHW && mhwLayer) chkMHW.addEventListener("change", () => {
@@ -950,16 +952,25 @@ require([
   // ---- Fish layer toggles ----
   const chkStock  = document.getElementById("chkStock");
   const chkImpact = document.getElementById("chkImpact");
-
+  const chkSpeciesShift = document.getElementById("chkSpeciesShift");
+  
   function syncFishToggles() {
     const stockOn  = chkStock  ? !!chkStock.checked  : true;
     const impactOn = chkImpact ? !!chkImpact.checked : true;
+    const shiftOn = chkSpeciesShift ? !!chkSpeciesShift.checked : true;
+    
     stockLayer.visible  = stockOn;
     impactLayer.visible = impactOn;
+    
+    // species shift master switch
+    if(spLines) spLines.visible = shiftOn;
+    if(spStart) spStart.visible = false; // hiding for now
+    if(spEnd) spEnd.visible = false; // hiding for now
     if (legend) legend.view = view;
   }
   if (chkStock)  chkStock.addEventListener("change", syncFishToggles);
   if (chkImpact) chkImpact.addEventListener("change", syncFishToggles);
+  if (chkSpeciesShift) chkSpeciesShift.addEventListener("change", syncFishToggles);
   document.addEventListener("change", (e) => {
     if (e.target && (e.target.id === "chkStock" || e.target.id === "chkImpact")) {
       syncFishToggles();
@@ -1220,6 +1231,8 @@ require([
     if (lmeShell) lmeShell.visible = chkJurLMEs ? !!chkJurLMEs.checked : true;
     applyRfmoSelectionFromUI();
   }
+  
+
 
   // Initial sync
   if (rfmoSelect) {
@@ -1370,9 +1383,11 @@ require([
         rasters.forEach((layer) => { layer.visible = false; });
         if (mhwLayer) mhwLayer.visible = false;
         // Hide species shift overlays.
-        spLines.visible = false;
+        const shiftOn = chkSpeciesShift ? !!chkSpeciesShift.checked : true;
+        spLines.visible = shiftOn;
         spStart.visible = false;
-        spEnd.visible = false;
+        spEnd.visible   = false;
+
         // Hide fish stock/impact overlays.
         impactLayer.visible = false;
         stockLayer.visible = false;
