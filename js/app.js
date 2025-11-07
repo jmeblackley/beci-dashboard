@@ -464,7 +464,7 @@ require([
       ]
     }
   });
-  const spLines = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 2, title: "Species shift (lines)", visible: true });
+  const spLines = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 2, title: "Species shift", visible: true });
   const spStart = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 1, title: "Species shift (start)", visible: true });
   const spEnd   = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 0, title: "Species shift (end)", visible: true });
   map.addMany([lmeShell, spLines, spStart, spEnd]);
@@ -734,7 +734,7 @@ require([
       type: "unique-value",
       field: "SpeciesGroup",             // <- correct field name
       uniqueValueInfos,
-      legendOptions: { title: "Species shift (lines)" }
+      legendOptions: { title: "Species shift" }
     };
 
     // --- Arcade helpers for popup ---
@@ -858,8 +858,7 @@ require([
     portalItem: { id: items.impactMapId || "5a820135359e42ac9fe107e3043e5a33" },
     title: "Ecosystem impacts",
     visible: false,
-    outFields: ["*"],
-    popupTemplate: { title: "{Impact_Type}", content: "{popup}" }
+    outFields: ["*"]
   });
   // Configure the stock status layer.  This layer displays point
   // observations of fish stock conditions.  We provide a custom
@@ -945,7 +944,7 @@ require([
         label,
         symbol: {
           type: "simple-marker",
-          size: 16,
+          size: 10,
           color: parseHexColor(color, 0.95),
           outline: { color: [255, 255, 255, 0.7], width: 0.5 }
         }
@@ -968,44 +967,124 @@ require([
   }
   // Colours by code (tune as you like)
   const impactColors = {
-    BLUE:   [ 38,  70,  83, 1],
-    ORANGE: [231, 111,  81, 1],
-    PURPLE: [188,  80, 144, 1],
-    RED:    [244, 162,  97, 1],
-    GREEN:  [124, 173,  67, 1]
+    "Poor recruitment":   [ 38,  70,  83, 1],   // BLUE/teal
+    "Reduced catch":      [231, 111,  81, 1],   // ORANGE
+    "Distribution shift": [188,  80, 144, 1],   // PURPLE
+    "Population collapse":[244,  67,  54, 1],   // RED
+    "Population increase":[124, 173,  67, 1],   // GREEN
+    "Mass mortality":     [156,  39, 176, 1]    // magenta
   };
+  
+  function rgbaToCss(rgba) {
+    const [r,g,b,a=1] = rgba || [136,136,136,1];
+    return `rgba(${r},${g},${b},${a})`;
+  }
+  impactLayer.popupTemplate = {
+    title: "{Impact_Type}",
+    content: (feature) => {
+      const a = feature.graphic?.attributes || feature.attributes || {};
+      const type = a.Impact_Type || "Impact";
+      const color = rgbaToCss(impactColors[type] || [136,136,136,1]);
 
-  function applyImpactRenderer() {
-  // Fixed colours per Impact_Type (tweak as you like)
-  const byType = {
-    "Poor recruitment":   [38, 70, 83, 1],     // blue/teal
-    "Reduced catch":      [231, 111, 81, 1],   // orange
-    "Distribution shift": [188, 80, 144, 1],   // purple
-    "Population collapse":[244, 67, 54, 1],    // red
-    "Population increase":[124, 173, 67, 1],   // green
-    "Mass mortality":     [156, 39, 176, 1]    // magenta (distinct from collapse)
-  };
+      // Years: prefer Start–End, fall back to Year
+      const yr =
+        (a.Year_Start && a.Year_End && `${a.Year_Start}–${a.Year_End}`) ||
+        (a.Year_Start && `${a.Year_Start}–`) ||
+        (a.Year_End && `–${a.Year_End}`) ||
+        (a.Year || "");
 
-  // Build uniqueValueInfos from the map above
-  const uniqueValueInfos = Object.entries(byType).map(([label, color]) => ({
-    value: label,
-    label,
-    symbol: {
-      type: "simple-marker",
-      size: 10,
-      color,
-      outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+      // Species line
+      const sci = a.Species_Scientific ? `<span style="font-style:italic">${a.Species_Scientific}</span>` : "";
+      const species =
+        a.Species_Common && sci ? `${a.Species_Common} (${sci})` :
+        a.Species_Common || sci || "";
+
+      // Short/Full description
+      const shortDesc = a['Description_short (may need further cuts - LMK)'] || "";
+      const fullDesc  = a.Full_Description || "";
+      const desc = shortDesc || fullDesc;
+
+      // Optional bits
+      const sev   = a.Severity ? `<div><b>Severity:</b> ${a.Severity}</div>` : "";
+      const econ  = a.Economic_Impact ? `<div><b>Economic impact:</b> ${a.Economic_Impact}</div>` : "";
+      const mgr   = a.Management_Response ? `<div><b>Response:</b> ${a.Management_Response}</div>` : "";
+      const lme   = a.LME_Name ? `<div><b>LME:</b> ${a.LME_Name}</div>` : "";
+      const notes = a.Notes ? `<div style="opacity:.85"><b>Notes:</b> ${a.Notes}</div>` : "";
+
+      // Source (linked if URL present)
+      let source = "";
+      if (a.Primary_Citation || a.URL) {
+        const cit = a.Primary_Citation || "Source";
+        if (a.URL) {
+          source = `<div><b>Source:</b> <a href="${a.URL}" target="_blank" rel="noopener">${cit}</a></div>`;
+        } else {
+          source = `<div><b>Source:</b> ${cit}</div>`;
+        }
+      }
+
+      // Build HTML
+      let html = '<div style="font-size:12px;line-height:1.45;">';
+
+      // Type pill
+      html += `
+        <div style="margin-bottom:8px;">
+          <span style="
+            display:inline-block; font-size:12px; padding:2px 8px;
+            border-radius:9999px; background:${color}; color:#fff; font-weight:600;">
+            ${type}
+          </span>
+        </div>`;
+
+      // One-line header under the pill
+      const headerBits = [
+        species,
+        yr ? yr : null,
+        a.LME_Name ? a.LME_Name : null
+      ].filter(Boolean);
+      if (headerBits.length) {
+        html += `<div style="margin-bottom:6px;opacity:.85;">${headerBits.join(' &nbsp;|&nbsp; ')}</div>`;
+      }
+
+      // Description
+      if (desc) html += `<div style="margin-bottom:6px;">${desc}</div>`;
+
+      // Details block
+      html += sev + econ + mgr + lme + source + notes;
+
+      html += '</div>';
+      return html;
     }
-  }));
-
-  impactLayer.renderer = {
-    type: "unique-value",
-    field: "Impact_Type",            // <— only this field
-    uniqueValueInfos,
-    // No defaultSymbol / defaultLabel -> avoids “others” row
-    legendOptions: { title: "Ecosystem impacts" }
   };
-}
+  function applyImpactRenderer() {
+    const byType = {
+      "Poor recruitment":   [38, 70, 83, 1],
+      "Reduced catch":      [231, 111, 81, 1],
+      "Distribution shift": [188, 80, 144, 1],
+      "Population collapse":[244, 67, 54, 1],
+      "Population increase":[124, 173, 67, 1],
+      "Mass mortality":     [156, 39, 176, 1]
+    };
+
+    const uniqueValueInfos = Object.entries(byType).map(([label, color]) => ({
+      value: label,
+      label,
+      symbol: {
+        type: "simple-marker",
+        style: "triangle",
+        size: 10,
+        color,
+        outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+      }
+    }));
+
+    impactLayer.renderer = {
+      type: "unique-value",
+      field: "Impact_Type",
+      uniqueValueInfos,
+      legendOptions: { title: "Ecosystem impacts" }
+    };
+  }
+
 
 
   applyStockRenderer();
