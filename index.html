@@ -18,6 +18,22 @@
     .tablist { display:flex; gap:.25rem; }
     .tab { border:1px solid var(--border); background:#fff; padding:.35rem .6rem; border-radius:.6rem; cursor:pointer; }
     .tab.is-active { border-color:var(--brand); color:#0b5e86; background:#f0f9ff; }
+    /* Sub-tab styling: reuse the base tab styling but reduce font size and padding so the
+       subcategory controls fit comfortably within the side panel.  Sub-tabs do not share
+       the .tab class so they are excluded from top-level tab logic. */
+    .subtab {
+      border: 1px solid var(--border);
+      background: #fff;
+      padding: .25rem .45rem;
+      border-radius: .6rem;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .subtab.is-active {
+      border-color: var(--brand);
+      color: #0b5e86;
+      background: #f0f9ff;
+    }
     .layout { display:grid; grid-template-columns: 340px 1fr; gap:.75rem; height: calc(100% - 56px); padding:.75rem; }
     .side { background:var(--panel); border:1px solid var(--border); border-radius:.8rem; padding:.75rem; overflow:auto; }
     .mapwrap { position:relative; background:#dbeafe; border:1px solid var(--border); border-radius:.8rem; overflow:hidden; }
@@ -37,10 +53,11 @@
     <!-- Update the header to reflect the broader Knowledge Network focus. -->
     <strong>BECI Knowledge Network (Draft)</strong>
     <div class="tablist" id="tablist">
-      <!-- Rename the tabs to align with the language guide: Home and Ocean state. -->
+      <!-- Rename the tabs to align with the language guide: Home and Environmental conditions. -->
       <!-- Updated tab labels to reflect the language guidance. -->
       <button class="tab is-active" data-theme="intro">Introduction</button>
-      <button class="tab" data-theme="env">Ocean&nbsp;state</button>
+      <!-- The Ocean state tab has been renamed to Environmental conditions to reflect the broader scope of this theme. -->
+      <button class="tab" data-theme="env">Environmental&nbsp;conditions</button>
       <button class="tab" data-theme="pressures">Ecosystem&nbsp;status</button>
       <button class="tab" data-theme="jurisdictions">Management&nbsp;&amp;&nbsp;Ecosystem&nbsp;Boundaries</button>
       <button class="tab" data-theme="fish">Fish dynamics&nbsp;&amp;&nbsp;impacts</button>
@@ -52,6 +69,20 @@
       <div id="themeTitle" class="section">
         <h2>Welcome</h2>
         <!-- The tagline below the heading is intentionally left blank.  Each theme will provide its own description in the content area. -->
+      </div>
+
+      <!-- Sub-tab list for the Environmental conditions theme.  This list is hidden by default and
+           only becomes visible when the Environmental conditions tab is selected.  Each button
+           represents a subcategory (Ocean State or Extreme Events) and controls which dataset
+           controls and description appear below. -->
+      <div id="envSubTabList" class="section" style="display:none">
+        <div class="tablist">
+          <!-- Use the existing tab styling for sub-tabs but apply the .subtab class to allow
+               custom sizing via CSS.  The non‑breaking spaces ensure consistent spacing. -->
+          <!-- Do not apply the .tab class to sub-tabs so that top-level tab logic does not treat them as primary tabs. -->
+          <button class="subtab is-active" data-sub="ocean">Ocean&nbsp;State</button>
+          <button class="subtab" data-sub="extreme">Extreme&nbsp;Events</button>
+        </div>
       </div>
 
       <div id="themeContent" class="section">
@@ -208,6 +239,7 @@
   <!-- Load the local configuration from the project root.  This provides the API key, spatial reference and item IDs. -->
   <script src="./config.local.js"></script>
   <!-- Application logic -->
+  <!-- Load the local application logic.  The script is located at the project root rather than within a js/ subfolder. -->
   <script src="./js/app.js"></script>
 </body>
 </html>

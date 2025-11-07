@@ -94,16 +94,19 @@ require([
   const mhwLayer = new ImageryTileLayer({
     portalItem: { id: items.mhwMonthlyId || "3eb9dc4649204d0498760ead24c58afc" },
     title: "Marine Heat Wave (Monthly)",
-    visible: false
+    visible: false,
+    listMode: "hide"
   });
 
-  const mhwRenderer = new RasterColormapRenderer({
-    colormapInfos: [
-      { value: 0, color: [0, 0, 0, 0], label: "No heatwave" },
-      { value: 1, color: [253, 126, 20, 0.6], label: "Heatwave" }
-    ]
-  });
-  mhwLayer.renderer = mhwRenderer;
+  //const mhwRenderer = new RasterColormapRenderer({
+  //  colormapInfos: [
+  //    { value: 0.00, color: [0, 0, 0, 0], label: "No heatwave" },     // fully transparent
+  //    { value: 1.00, color: [253, 126, 20, 153], label: "Heatwave" }  // 60% opacity = 0.6 * 255
+  //  ]
+  //});
+
+
+
 
   // Chlorophyll concentrations are measured in milligrams per cubic metre (mg/m³).
   const chlMonthly = new ImageryTileLayer({
@@ -151,7 +154,7 @@ require([
   sstAnnual.renderer  = sstRenderer;
   chlMonthly.renderer = chlRenderer;
   chlAnnual.renderer  = chlRenderer;
-
+  mhwLayer.renderer = sstRenderer;
   const rasters = [sstMonthly, sstAnnual, chlMonthly, chlAnnual];
   map.addMany(rasters);
   map.add(mhwLayer);
@@ -492,37 +495,93 @@ require([
   function pickImpactColor(index) { return IMPACT_PALETTE[index % IMPACT_PALETTE.length]; }
 
   // ---- LME health polygons ----
+  // ---- LME health polygons ----
+
+  // Popup for LME health – title pill + score bar + plain-text sections
   const lmeHealthPopup = {
-    title: "{LME_Name}",
-    content: [
+    // Title with coloured status pill
+    title:
+      `{expression/cleanName} ` +
+      `<span style="font-size:12px;padding:2px 8px;border-radius:9999px;` +
+      `background:{expression/statusColor};color:#fff;margin-left:8px;">` +
+      `{Overall_Status}</span>`,
+
+    expressionInfos: [
       {
-        type: "fields",
-        fieldInfos: [
-          { fieldName: "LME_Name", label: "Large Marine Ecosystem" },
-          { fieldName: "Overall_Status", label: "Health Status" },
-          { fieldName: "Health_Score", label: "Health Score (0–100)" },
-          { fieldName: "Primary_Concern", label: "Primary Concern" },
-          { fieldName: "Notes", label: "Additional Information" }
-        ]
+        name: "cleanName",
+        title: "Normalized LME name",
+        expression:
+          "IIf(Find(Upper($feature.LME_Name), 'JAPAN') > -1 || " +
+          "Find(Upper($feature.LME_Name), 'EAST SEA') > -1, " +
+          "'LME 50', $feature.LME_Name)"
+      },
+      { // rounded score for display
+        name: "scoreRounded",
+        expression: "Round(DefaultValue($feature.Health_Score, 0))"
+      },
+      { // clamped score for bar width
+        name: "scoreClamped",
+        expression: "Max(0, Min(100, Round(DefaultValue($feature.Health_Score, 0))))"
+      },
+      { // pretty concern text
+        name: "concernPretty",
+        expression: "IIf(IsEmpty($feature.Primary_Concern), null, Proper($feature.Primary_Concern))"
+      },
+      { // safe notes (may be null)
+        name: "notesSafe",
+        expression: "IIf(IsEmpty($feature.Notes), null, $feature.Notes)"
+      },
+      { // colour for status pill + bar
+        name: "statusColor",
+        expression:
+          "When( " +
+          "$feature.Overall_Status == 'Critical', '#DC3545', " +
+          "$feature.Overall_Status == 'Warning',  '#FD7E14', " +
+          "$feature.Overall_Status == 'Caution',  '#FFC107', " +
+          "$feature.Overall_Status == 'Good',     '#28A745', " +
+          "'#6C757D')"
+      }
+    ],
+
+    content: [
+      // Score bar + primary concern
+      {
+        type: "text",
+        text:
+          `<div style="font-size:12px;line-height:1.45;">
+             <div><b>Health score:</b> {expression/scoreRounded}/100</div>
+             <div style="height:8px;background:#eee;border-radius:6px;margin:6px 0 10px;">
+               <div style="height:8px;width:{expression/scoreClamped}%;
+                           background:{expression/statusColor};
+                           border-radius:6px;"></div>
+             </div>
+             <div><b>Primary concern:</b> {expression/concernPretty}</div>
+           </div>`
+      },
+      // Notes as plain text (only renders when not empty)
+      {
+        type: "text",
+        text:
+          `<div style="font-size:12px;line-height:1.45;margin-top:8px;">
+             <div><b>Notes:</b> {expression/notesSafe}</div>
+           </div>`,
+        visibleExpression: "!IsEmpty($feature.Notes)"
       }
     ]
   };
+
+  // Feature layer
   const lmeHealthLayer = new FeatureLayer({
     portalItem: { id: items.lmeHealthId || "3ca4c0dfea2c4212b15c4dba53eb4189" },
     layerId: 0,
     title: "LME health",
     visible: false,
-    outFields: [
-      "LME_Name",
-      "Overall_Status",
-      "Health_Score",
-      "Primary_Concern",
-      "Notes"
-    ],
+    outFields: ["LME_Name","Overall_Status","Health_Score","Primary_Concern","Notes"],
     popupTemplate: lmeHealthPopup
   });
   map.add(lmeHealthLayer);
 
+  // Reapply your unique-value renderer *after* the layer loads
   function applyLmeHealthRenderer() {
     lmeHealthLayer.renderer = {
       type: "unique-value",
@@ -534,14 +593,93 @@ require([
       },
       defaultLabel: "Unknown",
       uniqueValueInfos: [
-        { value: "Critical", label: "Critical", symbol: { type: "simple-fill", color: [220, 53, 69, 0.7],  outline: { color: [255,255,255,0.7], width: 0.5 } } },
-        { value: "Warning",  label: "Warning",  symbol: { type: "simple-fill", color: [253, 126, 20, 0.7], outline: { color: [255,255,255,0.7], width: 0.5 } } },
-        { value: "Caution",  label: "Caution",  symbol: { type: "simple-fill", color: [255, 193, 7, 0.7],  outline: { color: [255,255,255,0.7], width: 0.5 } } },
-        { value: "Good",     label: "Good",     symbol: { type: "simple-fill", color: [40, 167, 69, 0.7],  outline: { color: [255,255,255,0.7], width: 0.5 } } }
+        {
+          value: "Critical",
+          label: "Critical",
+          symbol: { type: "simple-fill",
+            color: [220, 53, 69, 0.7],
+            outline: { color: [255,255,255,0.7], width: 0.5 } }
+        },
+        {
+          value: "Warning",
+          label: "Warning",
+          symbol: { type: "simple-fill",
+            color: [253,126,20,0.7],
+            outline: { color: [255,255,255,0.7], width: 0.5 } }
+        },
+        {
+          value: "Caution",
+          label: "Caution",
+          symbol: { type: "simple-fill",
+            color: [255,193,7,0.7],
+            outline: { color: [255,255,255,0.7], width: 0.5 } }
+        },
+        {
+          value: "Good",
+          label: "Good",
+          symbol: { type: "simple-fill",
+            color: [40,167,69,0.7],
+            outline: { color: [255,255,255,0.7], width: 0.5 } }
+        }
       ]
     };
   }
-  applyLmeHealthRenderer();
+
+  // Ensure renderer wins over any saved portal style
+  lmeHealthLayer.when(applyLmeHealthRenderer);
+  // (Optional) also re-apply once the layer view is ready in the map view
+  // view.whenLayerView(lmeHealthLayer).then(() => applyLmeHealthRenderer());
+//
+//  const lmeHealthPopup = {
+//    title: "{LME_Name}",
+//    content: [
+//      {
+//        type: "fields",
+//        fieldInfos: [
+//          { fieldName: "LME_Name", label: "Large Marine Ecosystem" },
+//          { fieldName: "Overall_Status", label: "Health Status" },
+//          { fieldName: "Health_Score", label: "Health Score (0–100)" },
+//          { fieldName: "Primary_Concern", label: "Primary Concern" },
+//          { fieldName: "Notes", label: "Additional Information" }
+//        ]
+//      }
+//    ]
+//  };
+//  const lmeHealthLayer = new FeatureLayer({
+//    portalItem: { id: items.lmeHealthId || "3ca4c0dfea2c4212b15c4dba53eb4189" },
+//    layerId: 0,
+//    title: "LME health",
+//    visible: false,
+//    outFields: [
+//      "LME_Name",
+//      "Overall_Status",
+//      "Health_Score",
+//      "Primary_Concern",
+//      "Notes"
+//    ],
+//    popupTemplate: lmeHealthPopup
+//  });
+//  map.add(lmeHealthLayer);
+//
+//  function applyLmeHealthRenderer() {
+//    lmeHealthLayer.renderer = {
+//      type: "unique-value",
+//      field: "Overall_Status",
+//      defaultSymbol: {
+//        type: "simple-fill",
+//        color: [200, 200, 200, 0.3],
+//        outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+//      },
+//      defaultLabel: "Unknown",
+//      uniqueValueInfos: [
+//        { value: "Critical", label: "Critical", symbol: { type: "simple-fill", color: [220, 53, 69, 0.7],  outline: { color: [255,255,255,0.7], width: 0.5 } } },
+//        { value: "Warning",  label: "Warning",  symbol: { type: "simple-fill", color: [253, 126, 20, 0.7], outline: { color: [255,255,255,0.7], width: 0.5 } } },
+//        { value: "Caution",  label: "Caution",  symbol: { type: "simple-fill", color: [255, 193, 7, 0.7],  outline: { color: [255,255,255,0.7], width: 0.5 } } },
+//        { value: "Good",     label: "Good",     symbol: { type: "simple-fill", color: [40, 167, 69, 0.7],  outline: { color: [255,255,255,0.7], width: 0.5 } } }
+//      ]
+//    };
+//  }
+//  applyLmeHealthRenderer();
 
   // ---- Species shift renderer ----
   function applySpeciesRenderer() {
@@ -719,12 +857,17 @@ require([
   radios.forEach((r) => {
     r.addEventListener("change", () => {
       if (!r.checked) return;
-      switch (r.value) {
-        case "sstMonthly": setOnlyVisible(sstMonthly); break;
-        case "sstAnnual":  setOnlyVisible(sstAnnual);  break;
-        case "chlMonthly": setOnlyVisible(chlMonthly); break;
-        case "chlAnnual":  setOnlyVisible(chlAnnual);  break;
-        default: break;
+      // Only respond to raster changes when the Environmental conditions theme
+      // is active and the Ocean State sub‑tab is selected.  This prevents
+      // invisible rasters from being toggled while other themes are active.
+      if (envSubTabList && envSubTabList.style.display !== 'none' && currentEnvSubTab === 'ocean') {
+        switch (r.value) {
+          case 'sstMonthly': setOnlyVisible(sstMonthly); break;
+          case 'sstAnnual':  setOnlyVisible(sstAnnual);  break;
+          case 'chlMonthly': setOnlyVisible(chlMonthly); break;
+          case 'chlAnnual':  setOnlyVisible(chlAnnual);  break;
+          default: break;
+        }
       }
     });
   });
@@ -741,7 +884,14 @@ require([
   if (chkEnd)   chkEnd.addEventListener("change", () => { spEnd.visible   = chkEnd.checked; });
 
   const chkMHW = document.getElementById("chkMHW");
-  if (chkMHW && mhwLayer) chkMHW.addEventListener("change", () => { mhwLayer.visible = chkMHW.checked; });
+  if (chkMHW && mhwLayer) chkMHW.addEventListener("change", () => {
+    // Only toggle the marine heatwave layer when the Environmental conditions theme
+    // is active and the Extreme Events sub‑tab is selected.  This prevents
+    // inadvertently showing the layer on other themes.
+    if (envSubTabList && envSubTabList.style.display !== 'none' && currentEnvSubTab === 'extreme') {
+      mhwLayer.visible = chkMHW.checked;
+    }
+  });
   const chkLME = document.getElementById("chkLME");
   if (chkLME && lmeLayer) chkLME.addEventListener("change", () => { lmeLayer.visible = chkLME.checked; });
 
@@ -1157,6 +1307,8 @@ require([
       showFishPanel: false,
       showTimeSlider: false,
       activateLayers: () => {
+        // Hide the Environmental conditions sub-tab list when leaving that theme
+        if (envSubTabList) envSubTabList.style.display = 'none';
         // Hide all data layers and overlays for the introduction view.
         // Reset visibility for all raster datasets and time-aware layers.
         rasters.forEach((layer) => { layer.visible = false; });
@@ -1186,42 +1338,23 @@ require([
       }
     },
     env: {
-      // Ocean state tab: environmental conditions such as SST and chlorophyll provide a baseline context.
-      title: "Ocean state",
-      content:
-        [
-          '<p>View environmental conditions across the North Pacific Ocean. Select a dataset below and use the time slider to explore temporal patterns. Only one dataset is displayed at a time to maintain temporal clarity.</p>',
-          '<p>Environmental conditions such as sea surface temperature (SST) and chlorophyll-<i>a</i> provide a baseline context.</p>'
-        ].join(''),
+      // Environmental conditions tab: contains two sub‑sections (Ocean State & Extreme Events).
+      title: "Environmental conditions",
+      content: '',
+      // Keep all panels visible so they can be toggled per sub‑tab.  The sub‑tab logic
+      // will decide which panels to show or hide.
       showLayerPanel: true,
       showVectorPanel: true,
-      showPressuresPanel: false,
+      showPressuresPanel: true,
       showJurisPanel: false,
       showFishPanel: false,
       showTimeSlider: true,
       activateLayers: () => {
-        // Show the selected raster dataset and hide others.
-        const checked = document.querySelector('input[name="rasterChoice"]:checked');
-        if (checked) {
-          if (checked.value === "sstMonthly") setOnlyVisible(sstMonthly);
-          if (checked.value === "sstAnnual")  setOnlyVisible(sstAnnual);
-          if (checked.value === "chlMonthly") setOnlyVisible(chlMonthly);
-          if (checked.value === "chlAnnual")  setOnlyVisible(chlAnnual);
-        } else {
-          setOnlyVisible(sstMonthly);
-        }
-        // Hide marine heatwave and other overlays by default.
-        if (mhwLayer) mhwLayer.visible = false;
-        lmeShell.visible = chkLMEs ? chkLMEs.checked : true;
-        lmeShell.popupEnabled = true;
-        if (lmeHealthLayer) lmeHealthLayer.visible = false;
-        spLines.visible = false;
-        spStart.visible = false;
-        spEnd.visible = false;
-        impactLayer.visible = false;
-        stockLayer.visible = false;
-
-        applyJurisdictionVisibilityFromUI();
+        // When entering the Environmental conditions theme, reveal the sub-tab list and
+        // delegate layer activation to the current sub-tab.  The sub-tab logic will
+        // handle which panels and layers should be visible.
+        if (envSubTabList) envSubTabList.style.display = '';
+        activateEnvSubTab(currentEnvSubTab);
       }
     },
     pressures: {
@@ -1240,6 +1373,8 @@ require([
       showFishPanel: false,
       showTimeSlider: false,
       activateLayers: () => {
+        // Hide the Environmental conditions sub-tab list when this theme is activated
+        if (envSubTabList) envSubTabList.style.display = 'none';
         // Hide rasters and heatwave masks. LME health is static.
         rasters.forEach(l => l.visible = false);
         if (mhwLayer) mhwLayer.visible = false;
@@ -1277,6 +1412,8 @@ require([
       showFishPanel: false,
       showTimeSlider: false,
       activateLayers: () => {
+        // Hide the Environmental conditions sub-tab list when this theme is activated
+        if (envSubTabList) envSubTabList.style.display = 'none';
         rasters.forEach(l => l.visible = false);
         if (mhwLayer) mhwLayer.visible = false;
         bindSliderTo(null);
@@ -1307,13 +1444,15 @@ require([
       showFishPanel: true,
       showTimeSlider: false,
       activateLayers: () => {
+        // Hide the Environmental conditions sub-tab list when this theme is activated
+        if (envSubTabList) envSubTabList.style.display = 'none';
         rasters.forEach(l => l.visible = false);
         if (mhwLayer) mhwLayer.visible = false;
         lmeShell.visible = chkLMEs ? chkLMEs.checked : true;
         lmeShell.popupEnabled = true;
         if (lmeHealthLayer) lmeHealthLayer.visible = false;
         bindSliderTo(null);
-        spLines.visible = false;
+        spLines.visible = true;
         spStart.visible = false;
         spEnd.visible   = false;
 
@@ -1331,7 +1470,110 @@ require([
   const fishPanelEl      = document.getElementById('fishPanel');
   const themeTitleEl     = document.getElementById('themeTitle');
   const themeContentEl   = document.getElementById('themeContent');
-  const tabButtons       = document.querySelectorAll('.tab');
+  // Select only the primary theme tabs.  The .subtab buttons inside the side panel
+  // lack the data-theme attribute and are excluded from this list.
+  const tabButtons       = document.querySelectorAll('.tab[data-theme]');
+
+  // ----- Environmental conditions sub-tabs -----
+  // Grab the sub-tab container and its buttons.  This list is hidden until the
+  // Environmental conditions tab is selected.  Each button has a data-sub
+  // attribute indicating the subcategory ('ocean' or 'extreme').
+  const envSubTabList = document.getElementById('envSubTabList');
+  const envSubTabButtons = envSubTabList ? envSubTabList.querySelectorAll('.subtab') : [];
+  // Maintain state of which sub-tab is currently active.  Defaults to the
+  // Ocean State view.
+  let currentEnvSubTab = 'ocean';
+  // Map sub-tab identifiers to their descriptive HTML strings.  These blocks
+  // will be injected into the themeContent element when the sub-tab is chosen.
+  const envSubTabDescriptions = {
+    ocean: [
+      '<p>View environmental conditions across the North Pacific Ocean. Select a dataset below and use the time slider to explore temporal patterns. Only one dataset is displayed at a time to maintain temporal clarity.</p>',
+      '<p>Environmental conditions such as sea surface temperature (SST) and chlorophyll-<i>a</i> provide a baseline context.</p>'
+    ].join(''),
+    extreme: [
+      '<p>Track extreme events that affect marine ecosystems. Toggle to view marine heatwave events and use the timeline to explore the spatial and temporal patterns of these events.</p>'
+    ].join('')
+  };
+  /**
+   * Switches the Environmental conditions sub-tabs and updates the UI accordingly.
+   *
+   * Selecting a sub-tab toggles which control panels are visible (raster vs. extreme
+   * events), updates the descriptive content, and adjusts the map layers.  It also
+   * hides ancillary overlays such as species shift and fish impacts which are not
+   * relevant to this theme.
+   *
+   * @param {string} sub - Either 'ocean' (Ocean State) or 'extreme' (Extreme Events).
+   */
+  function activateEnvSubTab(sub) {
+    currentEnvSubTab = sub;
+    // Highlight the active sub-tab button
+    if (envSubTabButtons && envSubTabButtons.forEach) {
+      envSubTabButtons.forEach((btn) => {
+        const subKey = btn.getAttribute('data-sub');
+        btn.classList.toggle('is-active', subKey === sub);
+      });
+    }
+    // Update the description in the content area
+    if (themeContentEl) {
+      themeContentEl.innerHTML = envSubTabDescriptions[sub] || '';
+    }
+    // Hide overlays that are not pertinent in this theme
+    spLines.visible = false;
+    spStart.visible = false;
+    spEnd.visible   = false;
+    if (lmeHealthLayer) lmeHealthLayer.visible = false;
+    impactLayer.visible = false;
+    stockLayer.visible  = false;
+    // Always apply jurisdiction visibility after toggling overlays
+    applyJurisdictionVisibilityFromUI();
+    // Adjust panels and map layers for the selected sub-tab
+    if (sub === 'ocean') {
+      // Display raster controls and vector overlays
+      showPanel(layerPanelEl, true);
+      showPanel(vectorPanelEl, true);
+      showPanel(pressuresPanelEl, false);
+      // Determine which raster is selected and show it exclusively
+      const checkedRadio = document.querySelector('input[name="rasterChoice"]:checked');
+      if (checkedRadio) {
+        switch (checkedRadio.value) {
+          case 'sstMonthly': setOnlyVisible(sstMonthly); break;
+          case 'sstAnnual':  setOnlyVisible(sstAnnual);  break;
+          case 'chlMonthly': setOnlyVisible(chlMonthly); break;
+          case 'chlAnnual':  setOnlyVisible(chlAnnual);  break;
+          default: break;
+        }
+      } else {
+        setOnlyVisible(sstMonthly);
+      }
+      // Ensure marine heatwave events are hidden in the Ocean State view
+      if (mhwLayer) mhwLayer.visible = false;
+    } else {
+      // Extreme Events view: hide raster and vector panels, show extreme events panel
+      showPanel(layerPanelEl, false);
+      showPanel(vectorPanelEl, false);
+      showPanel(pressuresPanelEl, true);
+      // Hide all rasters
+      rasters.forEach((layer) => { layer.visible = false; });
+      // Show or hide the marine heatwave layer based on the checkbox
+      const chk = document.getElementById('chkMHW');
+      if (mhwLayer) {
+        mhwLayer.visible = chk ? !!chk.checked : true;
+      }
+      // Bind the time slider to the marine heatwave layer
+      bindSliderTo(mhwLayer);
+    }
+  }
+  // Attach click handlers to the sub-tab buttons so they switch views
+  if (envSubTabButtons && envSubTabButtons.forEach) {
+    envSubTabButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const subKey = btn.getAttribute('data-sub');
+        if (subKey) {
+          activateEnvSubTab(subKey);
+        }
+      });
+    });
+  }
 
   function showPanel(el, show) { if (el) el.style.display = show ? '' : 'none'; }
 
