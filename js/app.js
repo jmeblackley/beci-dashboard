@@ -927,11 +927,13 @@ require([
   const chkLines = document.getElementById("chkLines");
   const chkStart = document.getElementById("chkStart");
   const chkEnd   = document.getElementById("chkEnd");
+  const chkJurLMEs = document.getElementById("chkJurLMEs");
 
   if (chkLMEs) chkLMEs.addEventListener("change", () => { lmeShell.visible = chkLMEs.checked; });
   if (chkLines) chkLines.addEventListener("change", () => { spLines.visible = chkLines.checked; });
   if (chkStart) chkStart.addEventListener("change", () => { spStart.visible = chkStart.checked; });
   if (chkEnd)   chkEnd.addEventListener("change", () => { spEnd.visible   = chkEnd.checked; });
+  if (chkJurLMEs && lmeShell) chkJurLMEs.addEventListener("change", () => {lmeShell.visible = chkJurLMEs.checked;})
 
   const chkMHW = document.getElementById("chkMHW");
   if (chkMHW && mhwLayer) chkMHW.addEventListener("change", () => {
@@ -1215,6 +1217,7 @@ require([
 
   function applyJurisdictionVisibilityFromUI() {
     if (eezLayer) eezLayer.visible = chkEEZ ? !!chkEEZ.checked : true;
+    if (lmeShell) lmeShell.visible = chkJurLMEs ? !!chkJurLMEs.checked : true;
     applyRfmoSelectionFromUI();
   }
 
