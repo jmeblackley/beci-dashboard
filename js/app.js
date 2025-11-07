@@ -782,10 +782,10 @@ require([
 
     // Define the mapping from status to label and colour (hex string)
     const legendMap = {
-      "Overfished":        { label: "Overfished (red), # e74c3c",   color: "#e74c3c" },
-      "Declining":         { label: "Declining (orange)",           color: "#f39c12" },
-      "Variable by stock": { label: "Variable by stock (yellow)",    color: "#f1c40f" },
-      "Healthy":           { label: "Healthy (green)",              color: "#2ecc71" }
+      "Overfished":        { label: "Overfished",   color: "#e74c3c" },
+      "Declining":         { label: "Declining",           color: "#f39c12" },
+      "Variable by stock": { label: "Variable by stock",    color: "#f1c40f" },
+      "Healthy":           { label: "Healthy",              color: "#2ecc71" }
     };
 
     const uniqueValueInfos = Object.keys(legendMap).map((status) => {
