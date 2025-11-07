@@ -494,7 +494,7 @@ require([
   ];
   function pickImpactColor(index) { return IMPACT_PALETTE[index % IMPACT_PALETTE.length]; }
 
-  // ---- LME health polygons ----
+ 
   // ---- LME health polygons ----
 
   // Popup for LME health – title pill + score bar + plain-text sections
@@ -724,44 +724,37 @@ require([
     title: "Stock Status",
     visible: false,
     outFields: ["*"],
+    // Provide a custom popup template that parses the raw popup
+    // string in JavaScript rather than relying on Arcade.  This
+    // avoids issues with HTML tags being displayed literally and
+    // allows fine‑grained formatting.  The callback receives the
+    // feature context and returns an HTML string.
     popupTemplate: {
-      // Use the species name as the popup title
-      title: `{species_name}`,
-      expressionInfos: [
-        // Replace any pipe separators (|) in the popup text with <br>
-        // for improved readability.  If the popup field is empty,
-        // return a null so that the corresponding content block hides.
-        {
-          name: "popupHtml",
-          expression: `IIf(IsEmpty($feature.popup), null, Replace($feature.popup, '|', '<br/>'))`
-        },
-        // Expose the status colour as a hex value for styling the pill
-        {
-          name: "statusColor",
-          expression: "DefaultValue($feature.status_color, '#888888')"
-        },
-        // Expose the status label for labelling the pill
-        {
-          name: "statusLabel",
-          expression: "DefaultValue($feature.status_label, 'Unknown')"
+      title: "{species_name}",
+      content: function (feature) {
+        const attrs = feature.graphic?.attributes || feature.attributes || {};
+        const status = attrs.status_label || 'Unknown';
+        const color  = attrs.status_color || '#888888';
+        // Build a coloured status pill
+        let html = '<div style="font-size:12px;line-height:1.45;">';
+        html += '<div style="margin-bottom:6px;"><strong>Status:</strong>';
+        html += '<span style="font-size:12px;padding:2px 8px;border-radius:9999px;'
+          + 'background:' + color + ';color:#fff;margin-left:6px;">' + status + '</span>';
+        html += '</div>';
+        // Parse the pipe‑delimited popup text into separate lines
+        const raw = attrs.popup || '';
+        if (raw) {
+          const parts = raw.split('|');
+          parts.forEach((p) => {
+            const trimmed = p.trim();
+            if (trimmed) {
+              html += '<div>' + trimmed + '</div>';
+            }
+          });
         }
-      ],
-      content: [
-        {
-          type: "text",
-          text:
-            `<div style="font-size:12px;line-height:1.45;">
-               <div style="margin-bottom:6px;"><strong>Status:</strong>
-                 <span style="font-size:12px;padding:2px 8px;border-radius:9999px;` +
-                 `background:{expression/statusColor};color:#fff;margin-left:6px;">
-                   {expression/statusLabel}
-                 </span>
-               </div>
-               <div>{expression/popupHtml}</div>
-             </div>`,
-          visibleExpression: "!IsEmpty($expression.popupHtml)"
-        }
-      ]
+        html += '</div>';
+        return html;
+      }
     }
   });
   map.addMany([impactLayer, stockLayer]);
@@ -785,14 +778,14 @@ require([
    */
   function applyStockRenderer() {
     // Exclude categories flagged for deletion from the legend
-    //stockLayer.definitionExpression = "status_label NOT IN ('Moderate concern','Other/Unknown')";
+    stockLayer.definitionExpression = "status_label NOT IN ('Moderate concern','Other/Unknown')";
 
     // Define the mapping from status to label and colour (hex string)
     const legendMap = {
-      "Overfished":        { label: "Overfished",   color: "#e74c3c" },
-      "Declining":         { label: "Declining",           color: "#f39c12" },
-      "Variable by stock": { label: "Variable by stock",    color: "#f1c40f" },
-      "Healthy":           { label: "Healthy",              color: "#2ecc71" }
+      "Overfished":        { label: "Overfished (red), # e74c3c",   color: "#e74c3c" },
+      "Declining":         { label: "Declining (orange)",           color: "#f39c12" },
+      "Variable by stock": { label: "Variable by stock (yellow)",    color: "#f1c40f" },
+      "Healthy":           { label: "Healthy (green)",              color: "#2ecc71" }
     };
 
     const uniqueValueInfos = Object.keys(legendMap).map((status) => {
@@ -802,7 +795,7 @@ require([
         label,
         symbol: {
           type: "simple-marker",
-          size: 9,
+          size: 16,
           color: parseHexColor(color, 0.95),
           outline: { color: [255, 255, 255, 0.7], width: 0.5 }
         }
@@ -814,69 +807,56 @@ require([
     // unexpected status values fall through to the default symbol.
     stockLayer.renderer = {
       type: "unique-value",
+      // Normalise "Likely healthy" into "Healthy" so the legend only
+      // includes a single Healthy category.
       valueExpression: `When($feature.status_label == 'Likely healthy', 'Healthy', $feature.status_label)`,
-      uniqueValueInfos,
-      defaultSymbol: {
-        type: "simple-marker",
-        size: 9,
-        color: [150, 150, 150, 0.9],
-        outline: { color: [255, 255, 255, 0.7], width: 0.5 }
-      },
-      defaultLabel: ""
+      uniqueValueInfos
+      // Intentionally omit defaultSymbol and defaultLabel so that
+      // unmatched values do not render and no "others" entry
+      // appears in the legend.
     };
   }
+  // Colours by code (tune as you like)
+  const impactColors = {
+    BLUE:   [ 38,  70,  83, 1],
+    ORANGE: [231, 111,  81, 1],
+    PURPLE: [188,  80, 144, 1],
+    RED:    [244, 162,  97, 1],
+    GREEN:  [124, 173,  67, 1]
+  };
 
   function applyImpactRenderer() {
-    impactLayer.queryFeatures({
-      where: "Impact_Type IS NOT NULL",
-      outFields: ["Impact_Type"],
-      returnGeometry: false
-    }).then((fs) => {
-      const types = dedupe(
-        fs.features.map(f => f.attributes.Impact_Type).filter(Boolean),
-        t => t
-      );
-      const uniqueValueInfos = types.map((t, i) => ({
-        value: t,
-        label: t,
-        symbol: {
-          type: "simple-marker",
-          size: 10,
-          color: pickImpactColor(i),
-          outline: { color: [255, 255, 255, 0.7], width: 0.5 }
-        }
-      }));
-      impactLayer.renderer = {
-        type: "unique-value",
-        field: "Impact_Type",
-        defaultSymbol: {
-          type: "simple-marker",
-          size: 10,
-          color: [120, 120, 120, 0.9],
-          outline: { color: [255, 255, 255, 0.7], width: 0.5 }
-        },
-        defaultLabel: "Other/Unspecified",
-        uniqueValueInfos,
-        visualVariables: [
-          {
-            type: "size",
-            valueExpression: `
-              var s = Upper($feature.Severity);
-              Decode(s,
-                'LOW', 6,
-                'MEDIUM', 10,
-                'MODERATE', 10,
-                'HIGH', 14,
-                9
-              );
-            `,
-            minDataValue: 6,
-            maxDataValue: 14
-          }
-        ]
-      };
-    });
-  }
+  // Fixed colours per Impact_Type (tweak as you like)
+  const byType = {
+    "Poor recruitment":   [38, 70, 83, 1],     // blue/teal
+    "Reduced catch":      [231, 111, 81, 1],   // orange
+    "Distribution shift": [188, 80, 144, 1],   // purple
+    "Population collapse":[244, 67, 54, 1],    // red
+    "Population increase":[124, 173, 67, 1],   // green
+    "Mass mortality":     [156, 39, 176, 1]    // magenta (distinct from collapse)
+  };
+
+  // Build uniqueValueInfos from the map above
+  const uniqueValueInfos = Object.entries(byType).map(([label, color]) => ({
+    value: label,
+    label,
+    symbol: {
+      type: "simple-marker",
+      size: 10,
+      color,
+      outline: { color: [255, 255, 255, 0.7], width: 0.5 }
+    }
+  }));
+
+  impactLayer.renderer = {
+    type: "unique-value",
+    field: "Impact_Type",            // <— only this field
+    uniqueValueInfos,
+    // No defaultSymbol / defaultLabel -> avoids “others” row
+    legendOptions: { title: "Ecosystem impacts" }
+  };
+}
+
 
   applyStockRenderer();
   applyImpactRenderer();
