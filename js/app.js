@@ -682,26 +682,176 @@ require([
 //  applyLmeHealthRenderer();
 
   // ---- Species shift renderer ----
+  //function applySpeciesRenderer() {
+  //  const categories = [
+  //    { value: "Groundfish", label: "Groundfish", symbol: { type: "simple-line", color: [0, 102, 204, 0.7], width: 2.5 } },
+  //    { value: "Pelagic",    label: "Pelagic",    symbol: { type: "simple-line", color: [255,102,  0, 0.7], width: 2.5 } },
+  //    { value: "Salmon",     label: "Salmon",     symbol: { type: "simple-line", color: [204,  0,  0, 0.7], width: 2.5 } },
+  //    { value: "General",    label: "General",    symbol: { type: "simple-line", color: [0,    0,  0, 0.7], width: 2.5 } }
+  //  ];
+  //  spLines.renderer = {
+  //    type: "unique-value",
+  //    valueExpression: `var sg = Upper(Trim($feature.SpeciesGroup));
+  //      var gf  = IndexOf(sg, 'GROUNDFISH') >= 0;
+  //      var pel = IndexOf(sg, 'PELAGIC') >= 0;
+  //      var sal = IndexOf(sg, 'SALMON') >= 0;
+  //      return IIf(gf, 'Groundfish', IIf(pel, 'Pelagic', IIf(sal, 'Salmon', 'General')));`,
+  //    uniqueValueInfos: categories,
+  //    defaultSymbol: { type: "simple-line", color: [0,0,0,0.7], width: 2.5 },
+  //    defaultLabel: "General"
+  //  };
+  //}
+  //// ---- Species shift renderer ----
+  //// ---- Species shift: OLD symbology + popup with inline arrow ----
   function applySpeciesRenderer() {
-    const categories = [
-      { value: "Groundfish", label: "Groundfish", symbol: { type: "simple-line", color: [0, 102, 204, 0.7], width: 2.5 } },
-      { value: "Pelagic",    label: "Pelagic",    symbol: { type: "simple-line", color: [255,102,  0, 0.7], width: 2.5 } },
-      { value: "Salmon",     label: "Salmon",     symbol: { type: "simple-line", color: [204,  0,  0, 0.7], width: 2.5 } },
-      { value: "General",    label: "General",    symbol: { type: "simple-line", color: [0,    0,  0, 0.7], width: 2.5 } }
-    ];
+    if (!spLines) return;
+
+    // HEX → RGBA helper
+    function hex(h) {
+      const s = String(h || "").replace("#","").trim();
+      if (s.length !== 6) return [75,85,99,255]; // default grey
+      return [parseInt(s.slice(0,2),16), parseInt(s.slice(2,4),16), parseInt(s.slice(4,6),16), 255];
+    }
+
+    // Fixed colour mapping for Species categories
+    const map = {
+      "Groundfish":      hex("#0066CC"),
+      "Pelagic":         hex("#FF6600"),
+      "Salmon":          hex("#CC0000"),
+      "Mixed":           hex("#000000"),
+      "General Pattern": hex("#666666")
+    };
+
+    // Build unique value infos for simple line symbology (no arrowheads)
+    const uniqueValueInfos = Object.entries(map).map(([label, rgba]) => ({
+      value: label,
+      label,
+      symbol: { type: "simple-line", color: rgba, width: 2.5, cap: "butt" }
+    }));
+
+    // --- OLD SYMBOLOGY: colour by SpeciesGroup ---
     spLines.renderer = {
       type: "unique-value",
-      valueExpression: `var sg = Upper(Trim($feature.SpeciesGroup));
-        var gf  = IndexOf(sg, 'GROUNDFISH') >= 0;
-        var pel = IndexOf(sg, 'PELAGIC') >= 0;
-        var sal = IndexOf(sg, 'SALMON') >= 0;
-        return IIf(gf, 'Groundfish', IIf(pel, 'Pelagic', IIf(sal, 'Salmon', 'General')));`,
-      uniqueValueInfos: categories,
-      defaultSymbol: { type: "simple-line", color: [0,0,0,0.7], width: 2.5 },
-      defaultLabel: "General"
+      field: "SpeciesGroup",             // <- correct field name
+      uniqueValueInfos,
+      legendOptions: { title: "Species shift (lines)" }
+    };
+
+    // --- Arcade helpers for popup ---
+
+    // 1) Bearing from Direction (degrees cw from North)
+    const bearingExpr = `
+      var d = Upper(Trim(DefaultValue(Text($feature.Direction), "")));
+      if (IsEmpty(d)) return null;
+      if (d == "N"  || d == "NORTH") return 0;
+      if (d == "NNE" || d == "NORTH-NORTHEAST" || d == "NORTH NORTHEAST") return 22.5;
+      if (d == "NE"  || d == "NORTHEAST") return 45;
+      if (d == "ENE" || d == "EAST-NORTHEAST"  || d == "EAST NORTHEAST") return 67.5;
+      if (d == "E"   || d == "EAST") return 90;
+      if (d == "ESE" || d == "EAST-SOUTHEAST"  || d == "EAST SOUTHEAST") return 112.5;
+      if (d == "SE"  || d == "SOUTHEAST") return 135;
+      if (d == "SSE" || d == "SOUTH-SOUTHEAST" || d == "SOUTH SOUTHEAST") return 157.5;
+      if (d == "S"   || d == "SOUTH") return 180;
+      if (d == "SSW" || d == "SOUTH-SOUTHWEST" || d == "SOUTH SOUTHWEST") return 202.5;
+      if (d == "SW"  || d == "SOUTHWEST") return 225;
+      if (d == "WSW" || d == "WEST-SOUTHWEST"  || d == "WEST SOUTHWEST") return 247.5;
+      if (d == "W"   || d == "WEST") return 270;
+      if (d == "WNW" || d == "WEST-NORTHWEST"  || d == "WEST NORTHWEST") return 292.5;
+      if (d == "NW"  || d == "NORTHWEST") return 315;
+      if (d == "NNW" || d == "NORTH-NORTHWEST" || d == "NORTH NORTHWEST") return 337.5;
+      return null;
+    `;
+
+    // 2) Orientation label: “North–Northwest · 337.5°”
+    const orientationLabelExpr = `
+      var txt = Trim(DefaultValue(Text($feature.Direction), ""));
+      var pretty = Replace(txt, "-", "–");
+      var deg = ${bearingExpr};
+      var parts = [];
+      if (!IsEmpty(pretty)) { Push(parts, pretty); }
+      if (!IsEmpty(deg)) { Push(parts, Round(deg, 1) + "°"); }
+      var out = Concatenate(parts, " · ");
+      return IIf(IsEmpty(out), "—", out);
+    `;
+
+    // 3) Distance label: prefer ShiftDistance_km, fallback to LineLength_km
+    const distanceExpr = `
+      var d1 = DefaultValue($feature.ShiftDistance_km, null);
+      var d2 = DefaultValue($feature.LineLength_km, null);
+      var v = When(!IsEmpty(d1), d1, !IsEmpty(d2), d2, null);
+      return IIf(IsEmpty(v), "—", Round(Number(v), 0) + " km");
+    `;
+
+    // 4) LMEs combined
+    const lmesExpr = `
+      var a = Trim(DefaultValue(Text($feature.LME_Start), ""));
+      var b = Trim(DefaultValue(Text($feature.LME_End), ""));
+      var s = "";
+      if (!IsEmpty(a) && !IsEmpty(b)) { s = a + " → " + b; }
+      else if (!IsEmpty(a)) { s = a; }
+      else if (!IsEmpty(b)) { s = b; }
+      else { s = Trim(DefaultValue(Text($feature.Associated_LMEs), "")); }
+      return IIf(IsEmpty(s), "—", s);
+    `;
+
+    // 5) Inline SVG arrow rotated by bearing, coloured by ColorHex
+    const arrowSvgExpr = `
+      var hex = Trim(DefaultValue(Text($feature.ColorHex), "#4b5563"));
+      var deg = ${bearingExpr};
+      if (IsEmpty(deg)) { deg = 0; }
+      var poly = "28,15 85,50 28,85"; // right-pointing triangle in 100×100 viewBox
+      var label = ${orientationLabelExpr};
+
+      var svg =
+        '<div style="display:flex;gap:8px;align-items:center;margin:4px 0;">' +
+          '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 100 100" ' +
+               'style="border-radius:6px;background:#f7f7f7;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.06)">' +
+            '<g transform="rotate(' + Text(deg) + ' 50 50)">' +
+              '<polygon points="' + poly + '" fill="' + hex + '" stroke="white" stroke-width="6" />' +
+            '</g>' +
+          '</svg>' +
+          '<div style="font:600 12px/1.3 system-ui,Segoe UI,Roboto,Arial,sans-serif;">' +
+            '<div style="opacity:.7;">Orientation</div>' +
+            '<div style="font-size:13px;">' + label + '</div>' +
+          '</div>' +
+        '</div>';
+      return svg;
+    `;
+
+    // --- Popup (lines only) ---
+    spLines.popupTemplate = {
+      title: "{Name}",
+      content: [
+        { type: "text", text: "{expression/arrow}" },
+        {
+          type: "text",
+          text:
+            "<b>Species group:</b> {SpeciesGroup}<br/>" +
+            //"<b>Arrow length:</b> {ArrowLength}<br/>" +
+            "<b>Shift distance:</b> {expression/distance}<br/>" +
+            "<b>Shift rate:</b> {ShiftRate}<br/>" +
+            "<b>Period:</b> {TimePeriod}<br/>" 
+            //"<b>LMEs:</b> {expression/lmes}"
+        },
+        {
+          type: "text",
+          text:
+            "<b>Source:</b> {Source}<br/>" +
+            "<b>Details:</b> {SourceDetail}"
+        }
+      ],
+      expressionInfos: [
+        { name: "arrow",     expression: arrowSvgExpr },
+        { name: "distance",  expression: distanceExpr },
+        { name: "lmes",      expression: lmesExpr }
+      ]
     };
   }
+
   applySpeciesRenderer();
+
+
+
 
   // ---- Fish layers ----
   const impactLayer = new FeatureLayer({
