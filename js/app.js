@@ -1070,7 +1070,7 @@ require([
       label,
       symbol: {
         type: "simple-marker",
-        style: "triangle",
+        style: "square",
         size: 10,
         color,
         outline: { color: [255, 255, 255, 0.7], width: 0.5 }
