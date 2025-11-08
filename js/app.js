@@ -464,7 +464,7 @@ require([
       ]
     }
   });
-  const spLines = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 2, title: "Species shift", visible: true });
+  const spLines = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 2, title: "Species shift", visible: false });
   const spStart = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 1, title: "Species shift (start)", visible: true });
   const spEnd   = new FeatureLayer({ portalItem: { id: speciesItemId }, layerId: 0, title: "Species shift (end)", visible: true });
   map.addMany([lmeShell, spLines, spStart, spEnd]);
@@ -1184,22 +1184,36 @@ require([
   const chkSpeciesShift = document.getElementById("chkSpeciesShift");
   
   function syncFishToggles() {
-    const stockOn  = chkStock  ? !!chkStock.checked  : true;
-    const impactOn = chkImpact ? !!chkImpact.checked : true;
-    const shiftOn = chkSpeciesShift ? !!chkSpeciesShift.checked : true;
+    const fishPanelShowing = fishPanelEl && fishPanelEl.style.display !== 'none';
+    const stockOn  = chkStock  ? !!chkStock.checked  : false;
+    const impactOn = chkImpact ? !!chkImpact.checked : fasle;
+    const shiftOn = chkSpeciesShift ? !!chkSpeciesShift.checked : false;
     
-    stockLayer.visible  = stockOn;
-    impactLayer.visible = impactOn;
-    
-    // species shift master switch
-    if(spLines) spLines.visible = shiftOn;
-    if(spStart) spStart.visible = false; // hiding for now
-    if(spEnd) spEnd.visible = false; // hiding for now
+    stockLayer.visible  = fishPanelShowing ? stockOn  : false;
+    impactLayer.visible = fishPanelShowing ? impactOn : false;
+    // Species shift master switch (off unless Fish is showing)
+    if (spLines) spLines.visible = fishPanelShowing ? shiftOn : false;
+    if (spStart) spStart.visible = false; // still hidden for now
+    if (spEnd)   spEnd.visible   = false; // still hidden for now
     if (legend) legend.view = view;
   }
-  if (chkStock)  chkStock.addEventListener("change", syncFishToggles);
-  if (chkImpact) chkImpact.addEventListener("change", syncFishToggles);
-  if (chkSpeciesShift) chkSpeciesShift.addEventListener("change", syncFishToggles);
+  //function syncFishToggles() {
+  //  const stockOn  = chkStock  ? !!chkStock.checked  : true;
+  //  const impactOn = chkImpact ? !!chkImpact.checked : true;
+  //  const shiftOn = chkSpeciesShift ? !!chkSpeciesShift.checked : true;
+  //  
+  //  stockLayer.visible  = stockOn;
+  //  impactLayer.visible = impactOn;
+  //  
+  //  // species shift master switch
+  //  if(spLines) spLines.visible = shiftOn;
+  //  if(spStart) spStart.visible = false; // hiding for now
+  //  if(spEnd) spEnd.visible = false; // hiding for now
+  //  if (legend) legend.view = view;
+  //}
+  //if (chkStock)  chkStock.addEventListener("change", syncFishToggles);
+  //if (chkImpact) chkImpact.addEventListener("change", syncFishToggles);
+  //if (chkSpeciesShift) chkSpeciesShift.addEventListener("change", syncFishToggles);
   document.addEventListener("change", (e) => {
     if (e.target && (e.target.id === "chkStock" || e.target.id === "chkImpact")) {
       syncFishToggles();
