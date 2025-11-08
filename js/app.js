@@ -726,7 +726,7 @@ require([
     const uniqueValueInfos = Object.entries(map).map(([label, rgba]) => ({
       value: label,
       label,
-      symbol: { type: "simple-line", color: rgba, width: 2.5, cap: "butt" }
+      symbol: { type: "simple-line", color: rgba, width: 2.5, marker:{style: "arrow", placement: "end", size: 12}}
     }));
 
     // --- OLD SYMBOLOGY: colour by SpeciesGroup ---
